@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CampusConnect</title>
+<link rel="stylesheet" href="design1.css">
+</head>
+<body>
+<div class="app">
+
+  <!-- LOG IN -->
+  <section id="auth" class="screen">
+    <div class="brand-center">
+      <div class="logo">🏪</div>
+      <h1>Campus<span>Connect</span></h1>
+      <p class="muted s">San Pedro National High School<br>Your School. Your Marketplace.</p>
+    </div>
+    <form id="loginForm" class="card" novalidate>
+      <h2>Log in to your account</h2>
+      <p class="muted s">Access CampusConnect using your school account.</p>
+      <button type="button" class="scanbtn" id="startScan"><span class="sci">⛶</span><div class="grow"><b>Scan School ID</b><div class="muted s">New here? Verify your ID to sign up</div></div><span>›</span></button>
+      <div class="or"><span>or</span></div>
+      <div class="field"><span class="ico">✉️</span><input id="studentId" placeholder="LRN, student ID or school email" autocomplete="username"><small class="err"></small></div>
+      <div class="field"><span class="ico">🔒</span><input id="password" type="password" placeholder="Password" autocomplete="current-password"><button type="button" class="eye" data-eye="password" aria-label="Show password">👁</button><small class="err"></small></div>
+      <div style="text-align:right;margin-top:2px"><button type="button" class="linkbtn" id="forgotBtn">Forgot password?</button></div>
+      <button class="btn primary">Log in</button>
+      <div class="note">🛡️ For San Pedro National High School students only.</div>
+    </form>
+  </section>
+
+  <!-- SCAN ID -->
+  <section id="scan" class="screen hidden">
+    <header class="top"><button class="icon" data-go="auth" aria-label="Back">←</button></header>
+    <h2 class="center" id="scanTitle">Scan Your School ID</h2>
+    <p class="muted s center" id="scanSub">Scan your San Pedro National High School ID to continue.</p>
+    <div class="scanframe"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i>
+      <div class="idcard"><div class="ih">SAN PEDRO<br>NATIONAL HIGH SCHOOL</div><div class="ib"><div class="ph"></div><div class="grow"><div class="ln"></div><div class="ln short"></div></div></div><div class="bc"></div></div>
+    </div>
+    <div id="scanErr" class="note bad hidden" role="alert"></div>
+    <div class="card tips">
+      <div>📷 Make sure your ID is clear and visible.</div>
+      <div>🔲 Place the whole ID within the frame, with good light and no glare.</div>
+      <div>🎓 Only San Pedro National High School IDs are accepted. Your grade level decides your role automatically.</div>
+    </div>
+    <button type="button" class="btn primary" id="camOpen">📷 Start Scanning</button>
+    <label class="linkbtn center" for="idPhoto" style="cursor:pointer">🖼️ Upload a photo instead</label>
+    <input type="file" id="idPhoto" accept="image/*" hidden>
+    <p class="muted s center" style="margin-top:10px">Your ID photo is read on your device. It is not uploaded or saved.</p>
+  </section>
+
+  <!-- VERIFYING -->
+  <section id="verify" class="screen hidden">
+    <h2 class="center" style="margin-top:30px">Verifying Information</h2>
+    <p class="muted s center">Please wait while we verify your student ID.</p>
+    <div class="spinwrap"><div class="spin"></div><div class="spinico">🪪</div></div>
+    <ul class="vsteps card" id="vSteps">
+      <li>Reading ID information...</li><li>Checking school name and ID...</li><li>Determining grade level...</li><li>Assigning user role...</li>
+    </ul>
+    <p class="muted s center" id="vNote">This can take a few seconds.</p>
+  </section>
+
+  <!-- CONFIRM ID DETAILS -->
+  <section id="idinfo" class="screen hidden">
+    <header class="top"><button class="icon" data-go="scan" aria-label="Back">←</button></header>
+    <h2 class="center">ID Detected!</h2>
+    <p class="muted s center">Please confirm if the details are correct. If the LRN or grade is wrong, retake the scan.</p>
+    <div class="idcard" style="margin:14px auto"><div class="ih">SAN PEDRO<br>NATIONAL HIGH SCHOOL</div><div class="ib"><div class="ph"></div><div class="grow"><div class="ln"></div><div class="ln short"></div></div></div><div class="bc"></div></div>
+    <form id="idForm" novalidate>
+      <label class="lab" for="iName">Full Name</label><div class="field box"><input id="iName" placeholder="e.g. Juan Dela Cruz" autocomplete="name"><small class="err"></small></div>
+      <label class="lab" for="iSid">LRN (Student ID)</label><div class="field box"><input id="iSid" placeholder="e.g. SPNHS-2026-12345"><small class="err"></small></div>
+      <label class="lab" for="iGrade">Grade Level</label><div class="field box"><select id="iGrade"><option value="">Select grade level</option><option>Grade 7</option><option>Grade 8</option><option>Grade 9</option><option>Grade 10</option><option>Grade 11</option><option>Grade 12</option></select><small class="err"></small></div>
+      <label class="lab" for="iStrand">Strand</label><div class="field box"><select id="iStrand" disabled><option>Select grade level first</option></select><small class="err"></small></div>
+      <button class="btn primary">Confirm and Continue</button>
+      <button type="button" class="linkbtn center" data-go="scan">Retake Scan</button>
+    </form>
+  </section>
+
+  <!-- ROLE ASSIGNED -->
+  <section id="role" class="screen hidden">
+    <div class="roleok">✓</div>
+    <h2 class="center">Role Assigned!</h2>
+    <p class="muted s center">Based on your grade level, you are a:</p>
+    <div id="roleBody"></div>
+    <button class="btn primary" id="roleNext">Continue</button>
+  </section>
+
+  <!-- CREATE ACCOUNT -->
+  <section id="create" class="screen hidden">
+    <header class="top"><button class="icon" data-go="role" aria-label="Back">←</button></header>
+    <h2 class="center">Create Your Account</h2>
+    <p class="muted s center">Set your username and password to keep your account secure.</p>
+    <form id="createForm" class="card" novalidate>
+      <label class="lab" for="cUser" style="margin-top:0">Username</label>
+      <div class="field box"><input id="cUser" placeholder="Choose a username" autocomplete="username"><small class="err"></small></div>
+      <label class="lab" for="cPw">Password</label>
+      <div class="field box"><input id="cPw" type="password" placeholder="Create a strong password" autocomplete="new-password"><button type="button" class="eye" data-eye="cPw" aria-label="Show password">👁</button><small class="err"></small></div>
+      <ul class="hints" id="pwHints"><li data-h="len">At least 8 characters</li><li data-h="mix">Include letters and numbers</li></ul>
+      <label class="lab" for="cCf">Confirm Password</label>
+      <div class="field box"><input id="cCf" type="password" placeholder="Re-enter your password" autocomplete="new-password"><button type="button" class="eye" data-eye="cCf" aria-label="Show password">👁</button><small class="err"></small></div>
+      <button class="btn primary">Create Account</button>
+    </form>
+  </section>
+
+  <!-- WELCOME (sellers) -->
+  <section id="welcome" class="screen hidden">
+    <div class="roleok" style="margin-top:50px">✓</div>
+    <h2 class="center">Login Successful!</h2>
+    <p class="muted center" id="welcomeSub"></p>
+    <div class="note center" id="welcomeNote" style="margin-top:20px"></div>
+    <button class="btn primary" id="toStore">Go to My Store</button>
+  </section>
+
+  <!-- HOME / FAVORITES -->
+  <section id="home" class="screen hidden">
+    <header class="top">
+      <div class="logo sm">🏪</div>
+      <div class="grow"><b class="title">Campus<span>Connect</span></b><div class="muted s">San Pedro National High School</div></div>
+      <button class="icon" aria-label="Notifications">🔔</button>
+      <button class="icon" data-go="profile" aria-label="Profile">👤</button>
+    </header>
+    <input id="search" class="search" placeholder="🔍  Search products...">
+    <div class="chips" id="chips">
+      <button class="chip on" data-cat="All">All Items</button>
+      <button class="chip" data-cat="School Supplies">School Supplies</button>
+      <button class="chip" data-cat="Food">Food</button>
+      <button class="chip" data-cat="Accessories">Accessories</button>
+    </div>
+    <h2 id="homeTitle">Today's picks</h2>
+    <p class="muted" id="homeSub">Discover products from your fellow students.</p>
+    <div class="grid" id="grid"></div>
+  </section>
+
+  <!-- MESSAGES -->
+  <section id="messages" class="screen hidden">
+    <h2>Messages</h2>
+    <div id="chatList"></div>
+  </section>
+
+  <!-- CHAT -->
+  <section id="chat" class="screen hidden chatscr">
+    <header class="top"><button class="icon" id="cBack" aria-label="Back">←</button><div class="av2" id="cAv">KY</div><div class="grow"><b class="title" id="cName">Seller</b><div class="muted s">Typically responds within an hour</div></div><button class="icon" data-rules aria-label="Safety">⋯</button></header>
+    <div id="cMsgs" class="msgs"></div>
+    <div class="cfoot">
+      <div id="cPending" class="pcard hidden"></div>
+      <div class="cinput"><input id="cText" placeholder="Send message..." enterkeyhint="send" autocomplete="off"><button class="icon" id="cEmoji" aria-label="Emoji">😊</button><button class="icon plus" id="cPlus" aria-label="Attach">＋</button><button class="icon plus hidden" id="cSend" aria-label="Send">➤</button></div>
+      <div id="cAttach" class="attach hidden"><button data-att="photo">🖼️<span>Photos</span></button><button data-att="video">▶️<span>Video</span></button><button data-att="order">🧾<span>Order</span></button><button data-att="product">🛍️<span>Product</span></button></div>
+      <input type="file" id="cFile" accept="image/*" hidden>
+    </div>
+  </section>
+
+  <!-- SELL -->
+  <section id="sell" class="screen hidden">
+    <header class="top"><button class="icon" data-go="home" aria-label="Back">←</button><b class="grow title">Sell a Product</b></header>
+    <form id="sellForm" novalidate>
+      <label class="upload" id="uploadBox">
+        <input type="file" id="photo" accept="image/*" hidden>
+        <img id="preview" alt="" hidden>
+        <div id="uploadText">🖼️<br><b>Add product photos</b><br><span class="muted s">Tap to upload photos of your product</span></div>
+      </label>
+      <div class="field box"><input id="pName" placeholder="Product name (e.g. Notebook, Keychain, Cookies)"><small class="err"></small></div>
+      <div class="field box"><input id="pPrice" type="number" min="1" placeholder="Price (₱) e.g. 50"><small class="err"></small></div>
+      <div class="field box"><select id="pCat"><option value="">Choose category</option><option>School Supplies</option><option>Food</option><option>Accessories</option></select><small class="err"></small></div>
+      <div class="field box"><textarea id="pDesc" rows="4" placeholder="Describe your product, condition, and other details..."></textarea></div>
+      <p class="muted s">ⓘ Meet buyers from your school community. <button type="button" class="linkbtn" data-rules>🛡️ Safety &amp; Rules</button></p>
+      <button class="btn primary">Post Product</button>
+    </form>
+  </section>
+
+  <!-- PROFILE -->
+  <section id="profile" class="screen hidden">
+    <header class="top"><div class="logo sm">🏪</div><div class="grow"><b class="title">Campus<span>Connect</span></b><div class="muted s">San Pedro National High School</div></div><button class="icon cartbtn" id="cartBtn" aria-label="Orders">🛒<em id="cartBadge" class="badge2 hidden">0</em></button><button class="icon" id="pMore" aria-label="Settings">⋯</button></header>
+    <div class="card prof">
+      <div class="avatar"><span class="avi" id="pfAv">🏪</span><i class="vchk">✓</i></div>
+      <div class="grow">
+        <div class="row between"><b class="title" id="pfName">Student User</b><button class="btn outline sm" id="editBtn">✏️ Edit Profile</button></div>
+        <div class="muted" id="pfSub">Student</div>
+        <span class="vpill">✔ Verified Student</span> <span class="vpill rolepill" id="pfRole"></span>
+      </div>
+    </div>
+    <div class="stats card">
+      <div><b id="stListings">0</b><span id="stLabel">Listings</span></div><div><b>48</b>Followers</div><div><b>20</b>Following</div><div><b id="stRev">0</b>Reviews</div>
+    </div>
+    <div class="ptabs">
+      <button class="ptab on" data-tab="listings"><span>🏠</span>My Listings</button>
+      <button class="ptab" data-tab="favorites"><span>♡</span>Favorites</button>
+      <button class="ptab" data-tab="orders"><span>📦</span>Orders</button>
+      <button class="ptab" data-tab="settings"><span>⚙️</span>Settings</button>
+    </div>
+    <div class="row between"><h2 id="tabTitle">My Listings</h2><button id="addBtn" class="btn primary sm" data-go="sell">＋ Add New Product</button></div>
+    <div class="grid" id="myGrid"></div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section id="settings" class="screen hidden">
+    <header class="top"><button class="icon" id="sBack" aria-label="Back">←</button><b class="grow title">Settings</b></header>
+    <div class="card slist">
+      <button class="srow" data-set="account"><span class="sic">👤</span><div class="grow"><b>Account Settings</b><div class="muted s">Manage your account details</div></div><span>›</span></button>
+      <button class="srow" data-set="role"><span class="sic">🧩</span><div class="grow"><b>Your Role</b><div class="muted s">See what you can do in CampusConnect</div></div><span>›</span></button>
+      <button class="srow" data-set="privacy"><span class="sic">🛡️</span><div class="grow"><b>Privacy &amp; Security</b><div class="muted s">Control your privacy and safety</div></div><span>›</span></button>
+      <button class="srow" data-set="notif"><span class="sic">🔔</span><div class="grow"><b>Notifications</b><div class="muted s">Choose what you want to be notified about</div></div><span>›</span></button>
+      <button class="srow" data-set="password"><span class="sic">🔒</span><div class="grow"><b>Password &amp; Login</b><div class="muted s">Change your password and login method</div></div><span>›</span></button>
+      <button class="srow" data-set="safety"><span class="sic">✅</span><div class="grow"><b>Safety &amp; Marketplace Rules</b><div class="muted s">Learn about our safety guidelines</div></div><span>›</span></button>
+      <button class="srow" data-set="help"><span class="sic">❓</span><div class="grow"><b>Help &amp; Support</b><div class="muted s">Get help or contact us</div></div><span>›</span></button>
+      <button class="srow" data-set="about"><span class="sic">ℹ️</span><div class="grow"><b>About CampusConnect</b><div class="muted s">Version, terms and more</div></div><span>›</span></button>
+    </div>
+    <button class="srow red" data-set="logout"><span class="sic">↪️</span><div class="grow"><b>Log Out</b><div class="s">Sign out from your account</div></div><span>›</span></button>
+  </section>
+
+  <!-- EDIT PROFILE -->
+  <section id="editprofile" class="screen hidden">
+    <header class="top"><button class="icon" id="eBack" aria-label="Back">←</button><b class="grow title">Edit Profile</b></header>
+    <div class="center"><div class="avatar big"><span class="avi" id="eAv">🏪</span></div>
+      <label class="btn primary sm" style="display:inline-block;cursor:pointer;margin-top:6px">📷 Change Photo<input type="file" id="ePhoto" accept="image/*" hidden></label></div>
+    <form id="editForm" novalidate>
+      <label class="lab" for="eName">Full Name</label><div class="field box"><input id="eName"><small class="err"></small></div>
+      <label class="lab" for="eUser">Username</label><div class="field box"><input id="eUser" placeholder="@username"><small class="err"></small></div>
+      <label class="lab" for="eGrade">Grade Level <span class="muted s">(set from your school ID)</span></label><div class="field box"><select id="eGrade"><option value="">Select grade level</option><option>Grade 7</option><option>Grade 8</option><option>Grade 9</option><option>Grade 10</option><option>Grade 11</option><option>Grade 12</option></select></div>
+      <label class="lab" for="eSec">Section</label><div class="field box"><select id="eSec"><option value="">Select your section</option><option>Section A</option><option>Section B</option><option>Section C</option><option>Section D</option><option>Section E</option></select></div>
+      <label class="lab" for="eMail">School Email</label><div class="field box"><input id="eMail" disabled></div>
+      <label class="lab" for="eBio">Bio</label><div class="field box"><textarea id="eBio" rows="3" maxlength="150" placeholder="Tell other students about you"></textarea><div class="muted s" style="text-align:right"><span id="eCount">0</span>/150</div></div>
+      <div class="note">🛡️ Your personal information is protected and only necessary profile details are displayed to other students.</div>
+      <button class="btn primary">Save Changes</button>
+      <button type="button" class="btn outline" id="eCancel">Cancel</button>
+    </form>
+  </section>
+
+  <!-- PRODUCT DETAIL (Overview / Feedback / Description) -->
+  <section id="detail" class="screen hidden">
+    <header class="top"><button class="icon" id="dBack" aria-label="Back">←</button><div class="logo sm">🏪</div><b class="grow title">CampusConnect</b><button class="icon heartbtn" id="dHeart" aria-label="Favorite">♡</button><button class="icon" aria-label="More">⋯</button></header>
+    <div class="dtabs"><button class="dtab on" data-dt="overview">Overview</button><button class="dtab" data-dt="feedback">Feedback</button><button class="dtab" data-dt="description">Description</button></div>
+    <div id="dBody"></div>
+    <div class="abar" id="abar"></div>
+  </section>
+
+  <!-- BUY NOW -->
+  <section id="buy" class="screen hidden">
+    <header class="top"><button class="icon" id="bBack" aria-label="Back">←</button><div class="logo sm">🏪</div><b class="grow title">CampusConnect</b></header>
+    <h2 class="bt">Buy Now</h2><p class="muted s">Review your item details before proceeding.</p>
+    <div id="buyBody"></div>
+  </section>
+
+  <!-- BOTTOM NAV -->
+  <nav id="nav" class="nav hidden">
+    <button data-go="home" class="on"><span>🏠</span>Home</button>
+    <button data-go="favorites"><span>♡</span>Favorites</button>
+    <button data-go="sell" class="sellbtn"><i>＋</i>Sell</button>
+    <button data-go="messages"><span>💬</span>Messages</button>
+    <button data-go="profile"><span>👤</span>Profile</button>
+  </nav>
+
+  <div id="sheet" class="sheet hidden"><div class="sheet-bg" data-close></div><div class="sheet-card"><button class="x" data-close aria-label="Close">✕</button><div id="sheetBody"></div></div></div>
+
+  <div id="toast" class="toast"></div>
+</div>
+<!-- LIVE CAMERA SCANNER -->
+<div id="cam" class="cam hidden" role="dialog" aria-modal="true" aria-label="Scan your school ID">
+  <video id="camVideo" playsinline muted autoplay></video>
+  <div class="camguide"><i class="c tl"></i><i class="c tr"></i><i class="c bl"></i><i class="c br"></i></div>
+  <p class="camhint">Fit the whole ID inside the frame, then tap the button</p>
+  <div class="cambar">
+    <button type="button" class="camside" id="camClose" aria-label="Close camera">✕</button>
+    <button type="button" class="camshot" id="camShot" aria-label="Take photo"></button>
+    <button type="button" class="camside" id="camFlip" aria-label="Switch camera">🔄</button>
+  </div>
+</div>
+<script src="id_reader.js"></script>
+<script src="brain.js"></script>
+</body>
+</html>
