@@ -29,6 +29,10 @@
       <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 4H5v16h4M16 8l4 4-4 4M20 12H9"/></symbol>
       <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5l12 7-12 7z"/></symbol>
       <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></symbol>
+      <symbol id="i-megaphone" viewBox="0 0 24 24"><path d="M3 11v3h4l9 5V6L7 11z"/><path d="M19 9a4 4 0 0 1 0 6"/></symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V6a2 2 0 0 1 2-2h8"/></symbol>
       <symbol id="i-bag" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6z"/><path d="M9 8a3 3 0 0 1 6 0"/></symbol>
       <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 21s-7-6-7-11a7 7 0 0 1 14 0c0 5-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></symbol>
       <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></symbol>
@@ -278,8 +282,13 @@
             <b class="title">Campus<span>Connect</span></b>
             <div class="muted s">San Pedro National High School</div>
           </div>
-          <button class="icon" aria-label="Notifications">
+<button class="icon bellbtn" data-go="notifications" aria-label="Notifications">
             <svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>
+            <em class="badge2 notifBadge hidden">0</em>
+          </button>
+          <button class="icon cartbtn" data-go="orders" aria-label="My Orders">
+            <svg class="i" aria-hidden="true"><use href="#i-cart"/></svg>
+            <em class="badge2 cartBadge hidden">0</em>
           </button>
           <button class="icon" data-go="profile" aria-label="Profile">
             <svg class="i" aria-hidden="true"><use href="#i-user"/></svg>
@@ -391,9 +400,13 @@
             <b class="title">Campus<span>Connect</span></b>
             <div class="muted s">San Pedro National High School</div>
           </div>
-          <button class="icon cartbtn" id="cartBtn" aria-label="Orders">
+<button class="icon bellbtn" data-go="notifications" aria-label="Notifications">
+            <svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>
+            <em class="badge2 notifBadge hidden">0</em>
+          </button>
+          <button class="icon cartbtn" data-go="orders" aria-label="My Orders">
             <svg class="i" aria-hidden="true"><use href="#i-cart"/></svg>
-            <em id="cartBadge" class="badge2 hidden">0</em>
+            <em class="badge2 cartBadge hidden">0</em>
           </button>
           <button class="icon" id="pMore" aria-label="Settings">⋯</button>
         </header>
@@ -590,6 +603,72 @@
         <h2 class="bt">Buy Now</h2>
         <p class="muted s">Review your item details before proceeding.</p>
         <div id="buyBody"></div>
+      </section>
+
+      <section id="orders" class="screen hidden">
+        <header class="top">
+          <button class="icon" id="oBack" aria-label="Back">←</button>
+          <div class="logo sm"><img src="assets/logo.jpg" alt="CampusConnect logo"></div>
+          <b class="grow title">CampusConnect</b>
+          <button class="icon bellbtn" data-go="notifications" aria-label="Notifications">
+            <svg class="i" aria-hidden="true"><use href="#i-bell"/></svg>
+            <em class="badge2 notifBadge hidden">0</em>
+          </button>
+          <button class="icon cartbtn" data-go="orders" aria-label="My Orders">
+            <svg class="i" aria-hidden="true"><use href="#i-cart"/></svg>
+            <em class="badge2 cartBadge hidden">0</em>
+          </button>
+        </header>
+        <h2 class="bt">My Orders</h2>
+        <div class="grid" id="ordersList"></div>
+      </section>
+
+      <section id="orderdetail" class="screen hidden">
+        <header class="top">
+          <button class="icon" id="odBack" aria-label="Back">←</button>
+          <div class="logo sm"><img src="assets/logo.jpg" alt="CampusConnect logo"></div>
+          <b class="grow title">CampusConnect</b>
+        </header>
+        <div id="odBody"></div>
+      </section>
+
+      <section id="notifications" class="screen hidden">
+        <header class="top">
+          <button class="icon" id="nBack" aria-label="Back">←</button>
+          <div class="logo sm"><img src="assets/logo.jpg" alt="CampusConnect logo"></div>
+          <b class="grow title">Notifications</b>
+          <button class="icon" id="nSettings" aria-label="Notification settings">
+            <svg class="i" aria-hidden="true"><use href="#i-gear"/></svg>
+          </button>
+        </header>
+        <div class="chips" id="nChips"></div>
+        <div id="nList"></div>
+      </section>
+
+      <section id="notifdetail" class="screen hidden">
+        <header class="top">
+          <button class="icon" id="ndBack" aria-label="Back">←</button>
+          <b class="grow title">Notification</b>
+          <button class="icon" id="ndDelete" aria-label="Delete notification">
+            <svg class="i" aria-hidden="true"><use href="#i-trash"/></svg>
+          </button>
+        </header>
+        <div id="ndBody"></div>
+      </section>
+
+      <section id="notifsettings" class="screen hidden">
+        <header class="top">
+          <button class="icon" id="nsBack" aria-label="Back">←</button>
+          <b class="grow title">Notification Settings</b>
+        </header>
+        <div class="card nsintro">
+          <span class="sico"><svg class="i" aria-hidden="true"><use href="#i-bell"/></svg></span>
+          <div>
+            <b>Notification Preferences</b>
+            <div class="muted s">Choose what notifications you want to receive.</div>
+          </div>
+        </div>
+        <div id="nsBody"></div>
       </section>
 
       <nav id="nav" class="nav hidden">

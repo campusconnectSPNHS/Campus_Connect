@@ -2373,3 +2373,310 @@ label.btn {
 #signupForm .err[id="sTermsErr"] {
   margin-top: 6px;
 }
+/* Orders: filters, cards, status pills */
+.ofilter {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1.5px solid var(--line);
+}
+
+.ofilter button {
+  flex: none;
+  border: 0;
+  background: none;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1.5px;
+}
+
+.ofilter button.on {
+  color: var(--blue);
+  font-weight: 700;
+  border-bottom-color: var(--blue);
+}
+
+.ocard {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.ocard:active {
+  background: #f3f8ff;
+}
+
+.chev {
+  color: var(--muted);
+  font-size: 22px;
+}
+
+.ostatus {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.ostatus.pending {
+  background: #fff3d6;
+  color: #a86a00;
+}
+
+.ostatus.processing {
+  background: #e3f0ff;
+  color: var(--blue);
+}
+
+.ostatus.completed {
+  background: #dff5e3;
+  color: #1e7a38;
+}
+
+.ostatus.cancelled {
+  background: #ffe3e4;
+  color: var(--red);
+}
+
+/* Order details */
+.odref {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.odsum {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.odtotal {
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #e3efff;
+  font-size: 18px;
+}
+
+.odactions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.btn.danger {
+  border-color: var(--red);
+  color: var(--red);
+  background: #fff;
+}
+
+.btn.danger.solid {
+  background: var(--red);
+  color: #fff;
+}
+
+.odcancelled {
+  margin-bottom: 12px;
+  background: #fff5f5;
+  border: 1.5px solid #ffd3d5;
+}
+
+.odaddr {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 20px;
+}
+
+/* Centered dialog version of the sheet */
+.sheet.dialog {
+  align-items: center;
+  padding: 0 18px;
+}
+
+.sheet.dialog .sheet-card {
+  border-radius: 24px;
+  text-align: center;
+  padding-top: 36px;
+}
+
+.dlgbtns {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* Notifications */
+.bellbtn {
+  position: relative;
+}
+
+#nChips {
+  margin-bottom: 12px;
+}
+
+.nitem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1.5px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  font: inherit;
+  text-align: left;
+  color: var(--navy);
+  cursor: pointer;
+}
+
+.nitem.unread {
+  background: #f3f8ff;
+}
+
+.nico {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  flex: none;
+  color: #fff;
+}
+
+.nico.message {
+  background: #2f8bff;
+}
+
+.nico.order {
+  background: #7a6be0;
+}
+
+.nico.inquiry {
+  background: #22b891;
+}
+
+.nico.announcement {
+  background: #f5b82e;
+}
+
+.ntime {
+  display: grid;
+  justify-items: end;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ndot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--blue);
+}
+
+.nempty {
+  text-align: center;
+  padding: 40px 20px;
+}
+
+.nbell {
+  display: inline-grid;
+  place-items: center;
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  background: #fff3d6;
+  color: #f5a623;
+}
+
+.ndhead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.ndmsg {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  margin: 14px 0;
+  padding: 12px 6px;
+  border: 1.5px solid var(--line);
+  border-radius: 14px;
+  background: #f7faff;
+}
+
+.step {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.step i {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  background: #fff;
+}
+
+.step.done i {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+
+.step.now i {
+  border: 6px solid var(--blue);
+}
+
+.step.now,
+.step.done {
+  color: var(--navy);
+}
+
+.nsintro {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+#nsBody .tg svg {
+  margin-right: 12px;
+  vertical-align: middle;
+  color: var(--blue);
+}

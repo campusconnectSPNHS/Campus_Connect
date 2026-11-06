@@ -28,25 +28,6 @@ const save = (k, v) => {
     return false;
   }
 };
-const sample = [
-  {
-    id: 5, name: "CampusConnect Oversized Hoodie", price: 599, old: 749, cat: "Accessories", bg: "#1b2a55", seller: "Student Seller", stock: 24,
-    colors: [{ n: "Navy Blue", c: "#2a3b73" }, { n: "Gray", c: "#c9ced8" }, { n: "Black", c: "#2b2e36" }], sizes: ["S", "M", "L", "XL"],
-    desc: "Cozy oversized hoodie with a Los Angeles, California print. Thick, soft fabric that is perfect for cool weather and school days."
-  },
-  {
-    id: 1, name: "School Supplies Set", price: 85, cat: "School Supplies", bg: "#f6c9d3", seller: "Student Seller"
-  },
-  {
-    id: 2, name: "Chocolate Cookies", price: 50, cat: "Food", bg: "#e8cfa9", seller: "Student Seller"
-  },
-  {
-    id: 3, name: "Cute Keychains", price: 35, cat: "Accessories", bg: "#f9c6dc", colors: [{ n: "Pink", c: "#f9c6dc" }, { n: "Blue", c: "#cfe6f7" }], seller: "Student Seller"
-  },
-  {
-    id: 4, name: "Beaded Bracelet", price: 25, cat: "Accessories", bg: "#cfe6f7", seller: "Student Seller"
-  },
-];
 let accounts = load("cc_accounts", []);
 let session = load("cc_session", null);
 let myItems = load("cc_mine", []);
@@ -66,7 +47,7 @@ function go(view) {
   $$(".screen").forEach(s => s.classList.add("hidden"));
   const screenId = view === "favorites" ? "home" : view;
   $("#" + screenId).classList.remove("hidden");
-  $("#nav").classList.toggle("hidden", [...AUTH_VIEWS, "sell", "detail", "buy", "settings", "editprofile", "chat"].includes(view));
+  $("#nav").classList.toggle("hidden", [...AUTH_VIEWS, "sell", "detail", "buy", "orders", "orderdetail", "notifications", "notifdetail", "notifsettings", "settings", "editprofile", "chat"].includes(view));
   const sb = $("#nav .sellbtn");
   if (sb)
     sb.classList.toggle("hidden", !isSeller());
@@ -82,8 +63,16 @@ function go(view) {
     renderProfile();
   if (view === "messages")
     renderChatList();
+  if (view === "orders")
+    $("#ordersList").innerHTML = ordersHTML();
+  if (view === "notifications")
+    renderNotifs();
+  if (view === "notifsettings")
+    renderNotifSettings();
   if (view === "editprofile")
     renderEdit();
+  updateNotifBadge();
+  updateCartBadge();
   window.scrollTo(0, 0);
 }
 document.addEventListener("click", e => {
@@ -511,7 +500,7 @@ $("#toStore").onclick = () => {
   ptab = "listings";
   go("profile");
 };
-const allProducts = () => [...myItems, ...sample];
+const allProducts = () => myItems;
 function card(p, mine) {
   const thumb = p.photo
     ? `<div class="thumb img" style="background-image:url(${p.photo})"></div>`
@@ -531,7 +520,7 @@ function renderGrid() {
     (category === "All" || p.cat === category) &&
     p.name.toLowerCase().includes(query));
   $("#grid").innerHTML = list.length ? list.map(p => card(p, false)).join("")
-    : `<div class="empty">${favView ? "No favorites yet. Tap ♡ on a product." : "No products found."}</div>`;
+    : `<div class="empty">${favView ? "No favorites yet. Tap ♡ on a product." : allProducts().length ? "No products found." : "No products have been posted yet."}</div>`;
 }
 $("#grid").addEventListener("click", e => {
   const h = e.target.closest("[data-fav]");
@@ -607,8 +596,7 @@ function renderProfile() {
   $("#stFollowers").textContent = social.followers.length;
   $("#stFollowing").textContent = social.following.length;
   $("#stRev").textContent = received.length;
-  $("#cartBadge").textContent = orders.length;
-  $("#cartBadge").classList.toggle("hidden", !orders.length);
+  updateCartBadge();
   renderTab();
 }
 let ptab = "listings";
@@ -634,36 +622,19 @@ function renderTab() {
     g.innerHTML = l.length ? l.map(p => card(p, false)).join("") : `<div class="empty">No favorites yet.</div>`;
   }
   else if (ptab === "orders")
-    g.innerHTML = orders.length ? orders.map(orderCard).join("") : `<div class="empty">No orders yet.</div>`;
+    g.innerHTML = ordersHTML();
   else
     g.innerHTML = `<div class="empty">Settings coming soon.</div>`;
 }
 const SOCIAL_VIEWS = ["followers", "following", "reviews"];
-const DEMO_SOCIAL = {
-  followers: [
-    { id: "f1", name: "Micaela Santos", grade: 12 },
-    { id: "f2", name: "James Reyes", grade: 11 },
-    { id: "f3", name: "Althea Cruz", grade: 10 },
-    { id: "f4", name: "Paolo Mendoza", grade: 12 },
-    { id: "f5", name: "Kristine Lopez", grade: 9 },
-    { id: "f6", name: "Rico Villanueva", grade: 8 },
-    { id: "f7", name: "Dana Aquino", grade: 11 }
-  ],
-  requests: [
-    { id: "r1", name: "Christian Santos", grade: 11 },
-    { id: "r2", name: "Patricia Reyes", grade: 8 }
-  ],
-  following: [
-    { id: "f1", name: "Micaela Santos", grade: 12 },
-    { id: "f2", name: "James Reyes", grade: 11 }
-  ]
-};
+const EMPTY_SOCIAL = { followers: [], requests: [], following: [] };
 const SAMPLE_REVIEWS = [
   { name: "Alyssa M.", text: "Great quality and exactly as described." },
   { name: "Joaquin T.", text: "Friendly seller and easy to meet on campus." },
   { name: "Bianca L.", text: "Fast reply and fair price. Recommended." }
 ];
-let social = load("cc_social", DEMO_SOCIAL);
+localStorage.removeItem("cc_social");
+let social = load("cc_follows", EMPTY_SOCIAL);
 let received = load("cc_received", []);
 let fQuery = "", fLevel = "all", showRequests = true;
 
@@ -716,15 +687,17 @@ function followersHTML() {
     <button class="pbtn soft" data-act="toggle-requests">Requests <span class="count">${social.requests.length}</span></button>
   </div>
   ${showRequests && social.requests.length ? requestsHTML() : ""}
+  ${social.followers.length ? `
   <input id="fSearch" class="sosearch" placeholder="Search followers..." value="${esc(fQuery)}">
   <div class="seg">${levels.map(([v, t]) => `<button data-act="level" data-level="${v}" class="${fLevel === v ? "on" : ""}">${t}</button>`).join("")}</div>
-  <div id="fList">${followerListHTML()}</div>`;
+  <div id="fList">${followerListHTML()}</div>` : `
+  <div class="empty">No followers yet.<br>When students follow you, they will appear here.</div>`}`;
 }
 function followingHTML() {
   const rows = social.following.map(p => personRow(p,
     `<button class="pbtn" data-act="unfollow" data-id="${p.id}">Unfollow</button>`)).join("");
   return socialHead(social.following.length, "Following Accounts", "badge") +
-    (rows || `<div class="empty">You are not following anyone yet.</div>`);
+    (rows || `<div class="empty">You are not following anyone yet.<br>Students you follow will appear here.</div>`);
 }
 function reviewsHTML() {
   const avg = received.length ? (received.reduce((n, r) => n + r.stars, 0) / received.length).toFixed(1) : "0.0";
@@ -747,7 +720,7 @@ function renderSocial() {
   $("#socialPane").innerHTML = views[ptab]();
 }
 function saveSocial() {
-  save("cc_social", social);
+  save("cc_follows", social);
   renderProfile();
 }
 const takeRequest = id => {
@@ -852,15 +825,7 @@ const isMine = id => myItems.some(p => p.id === id);
 const BASE = {
   5: 84, 4: 12, 3: 3, 2: 1, 1: 0
 };
-const SEED = [
-  {
-    name: "Alyssa M.", stars: 5, when: "2 days ago", text: "Great quality and perfect for school! Exactly as described. Will definitely buy again!", helpful: 18, verified: true
-  },
-  {
-    name: "Joaquin T.", stars: 5, when: "4 days ago", text: "Worth it! Seller was friendly and easy to meet on campus.", helpful: 9, verified: true
-  },
-];
-const revsOf = id => [...(reviews[id] || []), ...SEED];
+const revsOf = id => reviews[id] || [];
 const stars = n => "★".repeat(n) + "☆".repeat(5 - n);
 function stats(id) {
   const c = { ...BASE };
@@ -1056,20 +1021,177 @@ $("#buy").addEventListener("click", e => {
       return openAddr();
     }
     orders.unshift({
-      id: Date.now(), pid: p.id, name: p.name, bg: (colorOf(p) || {}).c || p.bg || "#dbe9ff", color: cur.color, size: cur.size, qty: cur.qty, total: p.price * cur.qty + 50, date: new Date().toLocaleDateString("en-PH")
+      id: Date.now(), pid: p.id, name: p.name, bg: (colorOf(p) || {}).c || p.bg || "#dbe9ff", color: cur.color, size: cur.size, qty: cur.qty, total: p.price * cur.qty + SHIPPING_FEE, date: new Date().toLocaleDateString("en-PH"),
+      status: "Pending", seller: p.seller || "Student Seller", addr: getAddr()
     });
     save("cc_orders", orders);
+    notify("order", "Order Update", `Your order #${refOf(orders[0])} has been placed and is now Pending.`, { order: orders[0].id });
     toast("Order placed! Pay when you receive your item.");
-    ptab = "orders";
-    return go("profile");
+    return go("orders");
   }
   else
     return;
   renderBuy();
 });
-const orderCard = o => `<div class="dpanel row" style="grid-column:1/-1;margin:0"><div class="mini" style="background:${o.bg}">${icon("bag")}</div><div class="grow"><b>${esc(o.name)}</b><div class="muted s">${[o.color, o.size, o.qty + " pc"].filter(Boolean).join(" | ")}</div><div class="muted s">${o.date}</div></div><b>${peso(o.total)}</b></div>`;
-function openSheet(html) {
+const SHIPPING_FEE = 50;
+const ORDER_FILTERS = ["All", "Pending", "Processing", "Completed", "Cancelled"];
+let orderFilter = "All", curOrderId = null, orderFrom = "orders";
+
+const statusOf = o => o.status || "Pending";
+const refOf = o => "CC" + new Date(o.id).getFullYear() + "-" + String(o.id % 10000).padStart(4, "0");
+const itemsLabel = o => o.qty + (o.qty === 1 ? " item" : " items");
+const sellerOf = o => o.seller || (findP(o.pid) || {}).seller || "Student Seller";
+const statusPill = o => `<span class="ostatus ${statusOf(o).toLowerCase()}">${statusOf(o)}</span>`;
+const findOrder = id => orders.find(o => o.id === id);
+function updateCartBadge() {
+  const active = orders.filter(o => statusOf(o) !== "Cancelled").length;
+  $$(".cartBadge").forEach(b => {
+    b.textContent = active;
+    b.classList.toggle("hidden", !active);
+  });
+}
+
+const orderCard = o => `
+  <button class="ocard" data-order="${o.id}">
+    <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
+    <div class="grow">
+      <b>Order #${refOf(o)}</b>
+      <div class="muted s">${esc(o.name)}</div>
+      <div class="muted s">${o.date} · ${itemsLabel(o)}</div>
+    </div>
+    ${statusPill(o)}
+    <span class="chev">›</span>
+  </button>`;
+
+function ordersHTML() {
+  if (!orders.length)
+    return `<div class="empty">No orders yet.</div>`;
+  const tabs = ORDER_FILTERS.map(f => `<button data-ofilter="${f}" class="${f === orderFilter ? "on" : ""}">${f}</button>`).join("");
+  const list = orders.filter(o => orderFilter === "All" || statusOf(o) === orderFilter);
+  return `<div class="ofilter">${tabs}</div>` +
+    (list.map(orderCard).join("") || `<div class="empty">No ${orderFilter.toLowerCase()} orders.</div>`);
+}
+
+function renderOrder() {
+  const o = findOrder(curOrderId);
+  if (!o)
+    return go("profile");
+  const sub = o.total - SHIPPING_FEE, a = o.addr || getAddr(), cancelled = statusOf(o) === "Cancelled";
+  $("#odBody").innerHTML = `
+    <div class="row between">
+      <h2 class="bt">Order Details</h2>
+      <button class="odref" id="odCopy" aria-label="Copy order number">#${refOf(o)} ${icon("copy")}</button>
+    </div>
+    <div>${statusPill(o)}</div>
+    <p class="muted s">Ordered on ${o.date} · ${itemsLabel(o)}</p>
+    <div class="dpanel row">
+      <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
+      <div class="grow">
+        <b>${esc(o.name)}</b>
+        <div class="muted s">${[o.color, o.size].filter(Boolean).map(esc).join(" · ")}</div>
+        <b>${peso(sub / o.qty)}</b>
+        <div class="muted s">Qty: ${o.qty}</div>
+      </div>
+    </div>
+    <div class="odsum">
+      <div class="row between"><span>Subtotal</span><b>${peso(sub)}</b></div>
+      <div class="row between"><span>Shipping Fee</span><b>${peso(SHIPPING_FEE)}</b></div>
+      <div class="row between odtotal"><span>Total</span><b>${peso(o.total)}</b></div>
+    </div>
+    ${cancelled ? `
+    <div class="card odcancelled">
+      <b>Order Cancelled</b>
+      <p class="muted s">This order has been cancelled. No further action is needed.</p>
+    </div>` : `
+    <div class="odactions">
+      <button class="btn outline" id="odChat">Chat Seller</button>
+      ${statusOf(o) === "Pending" ? `<button class="btn danger" id="odCancel">Cancel Order</button>` : ""}
+    </div>`}
+    <div class="card odaddr">
+      <b>Shipping Address</b>
+      <div>${esc(a.name)}</div>
+      <div class="muted s">${esc(a.phone)}</div>
+      <div class="muted s">${esc(a.line)}</div>
+    </div>`;
+}
+function showOrder(id) {
+  if (curView === "profile" || curView === "orders")
+    orderFrom = curView;
+  curOrderId = id;
+  go("orderdetail");
+  renderOrder();
+}
+function confirmCancelHTML(o) {
+  return `
+    <h2 class="sh">Cancel Order?</h2>
+    <p>Are you sure you want to cancel this order?</p>
+    <p class="muted s">The seller will be notified, and the order will be marked as cancelled.</p>
+    <div class="dlgbtns">
+      <button class="btn outline" data-close>Go Back</button>
+      <button class="btn danger solid" data-oact="cancel-yes">Yes, Cancel Order</button>
+    </div>`;
+}
+function cancelOrder() {
+  const o = findOrder(curOrderId);
+  if (!o || statusOf(o) !== "Pending")
+    return closeSheet();
+  o.status = "Cancelled";
+  save("cc_orders", orders);
+  pushMsg({ from: "me", type: "text", text: `I cancelled order #${refOf(o)}.` }, sellerOf(o));
+  notify("order", "Order Update", `Your order #${refOf(o)} has been cancelled.`, { order: o.id });
+  renderOrder();
+  openSheet(`
+    <h2 class="sh">Order Cancelled</h2>
+    <p class="muted s">Your order #${refOf(o)} has been successfully cancelled.</p>
+    <div class="dlgbtns">
+      <button class="btn primary" data-oact="back-orders">Back to Orders</button>
+    </div>`, true);
+}
+const backToOrders = () => {
+  closeSheet();
+  if (orderFrom === "profile")
+    ptab = "orders";
+  go(orderFrom);
+};
+
+function onOrdersClick(e) {
+  const f = e.target.closest("[data-ofilter]"), c = e.target.closest("[data-order]");
+  if (f) {
+    orderFilter = f.dataset.ofilter;
+    $("#ordersList").innerHTML = ordersHTML();
+    if (curView === "profile")
+      renderTab();
+  }
+  else if (c)
+    showOrder(+c.dataset.order);
+}
+$("#myGrid").addEventListener("click", onOrdersClick);
+$("#ordersList").addEventListener("click", onOrdersClick);
+$("#oBack").onclick = () => go(lastMain || "home");
+$("#odBack").onclick = backToOrders;
+$("#odBody").addEventListener("click", e => {
+  const o = findOrder(curOrderId);
+  if (e.target.closest("#odCancel"))
+    openSheet(confirmCancelHTML(o), true);
+  else if (e.target.closest("#odChat"))
+    openChat(sellerOf(o), null, "orderdetail");
+  else if (e.target.closest("#odCopy"))
+    navigator.clipboard.writeText(refOf(o))
+      .then(() => toast("Order number copied."))
+      .catch(() => toast("Could not copy the order number."));
+});
+$("#sheetBody").addEventListener("click", e => {
+  const b = e.target.closest("[data-oact]");
+  if (!b)
+    return;
+  if (b.dataset.oact === "cancel-yes")
+    cancelOrder();
+  else if (b.dataset.oact === "back-orders")
+    backToOrders();
+});
+function openSheet(html, asDialog = false) {
   $("#sheetBody").innerHTML = html;
+  $("#sheet").classList.toggle("dialog", asDialog);
   $("#sheet").classList.remove("hidden");
 }
 function closeSheet() {
@@ -1148,6 +1270,157 @@ document.addEventListener("change", e => {
     save("cc_prefs", prefs);
   }
 });
+Object.assign(prefs, { inquiries: prefs.inquiries ?? true, announce: prefs.announce ?? true });
+
+const NOTIF_TYPES = {
+  message: { label: "Messages", icon: "chat", pref: "msgs" },
+  order: { label: "Order Updates", icon: "box", pref: "orders" },
+  inquiry: { label: "Inquiries", icon: "search", pref: "inquiries" },
+  announcement: { label: "Announcements", icon: "megaphone", pref: "announce" }
+};
+const ORDER_STEPS = ["Pending", "Processing", "Completed", "Cancelled"];
+let notifs = load("cc_notifs", []), notifFilter = "All", curNotifId = null, nsFrom = "notifications";
+
+if (!load("cc_notifs_seeded", false)) {
+  notifs.push({
+    id: Date.now(), type: "announcement", title: "Welcome to CampusConnect",
+    body: "Buy and sell with fellow SPNHS students. Meet in school-approved areas and stay safe.",
+    ts: Date.now(), read: false
+  });
+  save("cc_notifs", notifs);
+  save("cc_notifs_seeded", true);
+}
+
+function notify(type, title, body, ref = {}) {
+  if (prefs[NOTIF_TYPES[type].pref] === false)
+    return;
+  notifs.unshift({ id: Date.now() + Math.random(), type, title, body, ref, ts: Date.now(), read: false });
+  notifs = notifs.slice(0, 100);
+  save("cc_notifs", notifs);
+  updateNotifBadge();
+}
+function updateNotifBadge() {
+  const unread = notifs.filter(n => !n.read).length;
+  $$(".notifBadge").forEach(b => {
+    b.textContent = unread;
+    b.classList.toggle("hidden", !unread);
+  });
+}
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - ts) / 60000);
+  if (m < 1)
+    return "Just now";
+  if (m < 60)
+    return m + "m ago";
+  if (m < 1440)
+    return Math.floor(m / 60) + "h ago";
+  if (m < 10080)
+    return Math.floor(m / 1440) + "d ago";
+  return new Date(ts).toLocaleDateString("en-PH", { month: "short", day: "numeric" });
+}
+const fullDate = ts => new Date(ts).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
+  " · " + new Date(ts).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+
+function renderNotifs() {
+  const filters = ["All", ...Object.values(NOTIF_TYPES).map(t => t.label)];
+  $("#nChips").innerHTML = filters.map(f => `<button class="chip ${f === notifFilter ? "on" : ""}" data-nfilter="${f}">${f}</button>`).join("");
+  const list = notifs.filter(n => notifFilter === "All" || NOTIF_TYPES[n.type].label === notifFilter);
+  $("#nList").innerHTML = list.length ? list.map(n => `
+    <button class="nitem ${n.read ? "" : "unread"}" data-notif="${n.id}">
+      <span class="nico ${n.type}">${icon(NOTIF_TYPES[n.type].icon)}</span>
+      <div class="grow"><b>${esc(n.title)}</b><div class="muted s">${esc(n.body)}</div></div>
+      <div class="ntime"><span>${timeAgo(n.ts)}</span>${n.read ? "" : `<i class="ndot"></i>`}</div>
+    </button>`).join("") : `
+    <div class="nempty">
+      <span class="nbell">${icon("bell")}</span>
+      <h3>No Notifications Yet</h3>
+      <p class="muted s">You're all caught up! New updates will appear here when you have them.</p>
+    </div>`;
+}
+function stepperHTML(status) {
+  const at = ORDER_STEPS.indexOf(status), cancelled = status === "Cancelled";
+  return `<div class="stepper">${ORDER_STEPS.map((s, i) => {
+    const state = i === at ? "now" : (!cancelled && i < at) || (cancelled && i === 0) ? "done" : "";
+    return `<div class="step ${state}"><i></i><span>${s}</span></div>`;
+  }).join("")}</div>`;
+}
+function notifDetailHTML(n) {
+  const head = `
+    <div class="ndhead">
+      <span class="nico ${n.type}">${icon(NOTIF_TYPES[n.type].icon)}</span>
+      <div><b>${esc(n.title)}</b><div class="muted s">${fullDate(n.ts)}</div></div>
+    </div>`;
+  const o = n.type === "order" && n.ref && findOrder(n.ref.order);
+  if (o)
+    return `${head}
+      <p>${esc(n.body)}</p>
+      ${stepperHTML(statusOf(o))}
+      <div class="dpanel row">
+        <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
+        <div class="grow">
+          <b>${esc(o.name)}</b>
+          <div class="muted s">${[o.color, o.size].filter(Boolean).map(esc).join(" · ")}</div>
+          <div class="muted s">${peso((o.total - SHIPPING_FEE) / o.qty)} · Qty: ${o.qty}</div>
+        </div>
+      </div>
+      <button class="btn outline" id="ndOrder">View Order</button>`;
+  if (n.ref && n.ref.chat)
+    return `${head}
+      <div class="card ndmsg">
+        <span class="pav">${esc(initials(n.ref.chat))}</span>
+        <div><b>${esc(n.ref.chat)}</b><div>${esc(n.body.replace(n.ref.chat + ": ", ""))}</div></div>
+      </div>
+      <button class="btn primary" id="ndReply">Reply</button>`;
+  return `${head}<p>${esc(n.body)}</p>`;
+}
+function showNotif(id) {
+  const n = notifs.find(x => x.id === id);
+  if (!n)
+    return go("notifications");
+  curNotifId = id;
+  n.read = true;
+  save("cc_notifs", notifs);
+  go("notifdetail");
+  $("#ndBody").innerHTML = notifDetailHTML(n);
+}
+function renderNotifSettings() {
+  $("#nsBody").innerHTML = toggles([
+    ["msgs", `${icon("chat")} Messages`],
+    ["orders", `${icon("box")} Order Updates`],
+    ["inquiries", `${icon("search")} Product Inquiries`],
+    ["announce", `${icon("megaphone")} School Announcements`]
+  ]);
+}
+
+$("#nBack").onclick = () => go(lastMain || "home");
+$("#nSettings").onclick = () => {
+  nsFrom = "notifications";
+  go("notifsettings");
+};
+$("#nsBack").onclick = () => go(nsFrom);
+$("#ndBack").onclick = () => go("notifications");
+$("#ndDelete").onclick = () => {
+  notifs = notifs.filter(n => n.id !== curNotifId);
+  save("cc_notifs", notifs);
+  go("notifications");
+  toast("Notification deleted.");
+};
+$("#notifications").addEventListener("click", e => {
+  const f = e.target.closest("[data-nfilter]"), n = e.target.closest("[data-notif]");
+  if (f) {
+    notifFilter = f.dataset.nfilter;
+    renderNotifs();
+  }
+  else if (n)
+    showNotif(+n.dataset.notif);
+});
+$("#ndBody").addEventListener("click", e => {
+  const n = notifs.find(x => x.id === curNotifId);
+  if (e.target.closest("#ndOrder"))
+    showOrder(n.ref.order);
+  else if (e.target.closest("#ndReply"))
+    openChat(n.ref.chat, null, "notifdetail");
+});
 let editFrom = "profile", ePhotoData = null;
 $("#settings").addEventListener("click", e => {
   const r = e.target.closest("[data-set]");
@@ -1163,8 +1436,10 @@ $("#settings").addEventListener("click", e => {
     openRoleSheet();
   else if (k === "privacy")
     openSheet(`<h2 class="sh">Privacy &amp; Security</h2><p class="muted s">Control who sees what.</p>${toggles([["showGrade", "Show my grade level to buyers"], ["showActive", "Show when I was last active"]])}<p class="muted s" style="margin-top:12px">Your name, contact number, and address are kept private.</p>`);
-  else if (k === "notif")
-    openSheet(`<h2 class="sh">Notifications</h2><p class="muted s">Choose what you want to be notified about.</p>${toggles([["msgs", "New messages"], ["orders", "Order updates"], ["deals", "Student deals &amp; price drops"]])}`);
+  else if (k === "notif") {
+    nsFrom = "settings";
+    go("notifsettings");
+  }
   else if (k === "password")
     openPw();
   else if (k === "safety")
@@ -1178,10 +1453,6 @@ $("#settings").addEventListener("click", e => {
 });
 $("#sBack").onclick = () => go("profile");
 $("#pMore").onclick = () => go("settings");
-$("#cartBtn").onclick = () => {
-  ptab = "orders";
-  renderProfile();
-};
 const uname = a => a.username || a.id.split("@")[0].replace(/[^a-z0-9._]/gi, "").slice(0, 20);
 const maskEmail = id => isEmail(id) ? id.replace(/^(.{1,3}).*(@.*)$/, (m, a, b) => a + "••••••••" + b) : "No school email added";
 const setAvatar = (el, u) => {
@@ -1287,9 +1558,12 @@ function renderChat() {
 function autoReply(key) {
   const n = (chats[key] || []).filter(m => m.from === "them").length;
   setTimeout(() => {
-    pushMsg({ from: "them", type: "text", text: n ? "Sure! We can meet at school during break time." : "Hi! Thanks for messaging. Yes, it's still available." }, key);
+    const reply = n ? "Sure! We can meet at school during break time." : "Hi! Thanks for messaging. Yes, it's still available.";
+    pushMsg({ from: "them", type: "text", text: reply }, key);
     if (curView === "chat" && chatKey === key)
       renderChat();
+    else
+      notify("message", "New Message", `${key}: ${reply}`, { chat: key });
   }, 1200);
 }
 function sendText() {
@@ -1317,7 +1591,11 @@ $("#cText").addEventListener("keydown", e => {
 $("#cSend").onclick = sendText;
 $("#cPlus").onclick = () => $("#cAttach").classList.toggle("hidden");
 $("#cBack").onclick = () => {
-  if (chatFrom === "detail" && cur) {
+  if (chatFrom === "notifdetail" && curNotifId)
+    showNotif(curNotifId);
+  else if (chatFrom === "orderdetail" && curOrderId)
+    showOrder(curOrderId);
+  else if (chatFrom === "detail" && cur) {
     go("detail");
     renderDetail();
   }
