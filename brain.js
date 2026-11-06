@@ -604,7 +604,9 @@ function renderProfile() {
     ptab = "favorites";
   $("#stLabel").textContent = seller ? "Listings" : "Orders";
   $("#stListings").textContent = seller ? myItems.length : orders.length;
-  $("#stRev").textContent = Object.values(reviews).reduce((n, l) => n + l.length, 0);
+  $("#stFollowers").textContent = social.followers.length;
+  $("#stFollowing").textContent = social.following.length;
+  $("#stRev").textContent = received.length;
   $("#cartBadge").textContent = orders.length;
   $("#cartBadge").classList.toggle("hidden", !orders.length);
   renderTab();
@@ -614,8 +616,14 @@ function renderTab() {
   const T = {
     listings: "My Listings", favorites: "Favorites", orders: "Orders", settings: "Settings"
   };
-  $("#tabTitle").textContent = T[ptab];
+  const isSocial = SOCIAL_VIEWS.includes(ptab);
+  $("#tabPane").classList.toggle("hidden", isSocial);
+  $("#socialPane").classList.toggle("hidden", !isSocial);
+  $$(".stat").forEach(b => b.classList.toggle("on", b.dataset.stat === statOf(ptab)));
   $$(".ptab").forEach(b => b.classList.toggle("on", b.dataset.tab === ptab));
+  if (isSocial)
+    return renderSocial();
+  $("#tabTitle").textContent = T[ptab];
   $("#addBtn").classList.toggle("hidden", ptab !== "listings");
   const g = $("#myGrid");
   if (ptab === "listings")
@@ -630,6 +638,184 @@ function renderTab() {
   else
     g.innerHTML = `<div class="empty">Settings coming soon.</div>`;
 }
+const SOCIAL_VIEWS = ["followers", "following", "reviews"];
+const DEMO_SOCIAL = {
+  followers: [
+    { id: "f1", name: "Micaela Santos", grade: 12 },
+    { id: "f2", name: "James Reyes", grade: 11 },
+    { id: "f3", name: "Althea Cruz", grade: 10 },
+    { id: "f4", name: "Paolo Mendoza", grade: 12 },
+    { id: "f5", name: "Kristine Lopez", grade: 9 },
+    { id: "f6", name: "Rico Villanueva", grade: 8 },
+    { id: "f7", name: "Dana Aquino", grade: 11 }
+  ],
+  requests: [
+    { id: "r1", name: "Christian Santos", grade: 11 },
+    { id: "r2", name: "Patricia Reyes", grade: 8 }
+  ],
+  following: [
+    { id: "f1", name: "Micaela Santos", grade: 12 },
+    { id: "f2", name: "James Reyes", grade: 11 }
+  ]
+};
+const SAMPLE_REVIEWS = [
+  { name: "Alyssa M.", text: "Great quality and exactly as described." },
+  { name: "Joaquin T.", text: "Friendly seller and easy to meet on campus." },
+  { name: "Bianca L.", text: "Fast reply and fair price. Recommended." }
+];
+let social = load("cc_social", DEMO_SOCIAL);
+let received = load("cc_received", []);
+let fQuery = "", fLevel = "all", showRequests = true;
+
+const levelOf = p => (p.grade >= 11 ? "SHS" : "JHS");
+const personRow = (p, action) => `
+  <div class="person">
+    <span class="pav">${esc(initials(p.name))}</span>
+    <div class="grow"><b>${esc(p.name)}</b><span>Grade ${p.grade} · ${levelOf(p)}</span></div>
+    ${action}
+  </div>`;
+const socialHead = (n, label, iconName) => `
+  <div class="card sochead">
+    <span class="sico">${icon(iconName)}</span>
+    <div class="grow"><b>${n}</b><div class="muted s">${label}</div></div>
+  </div>`;
+
+function statOf(view) {
+  return view === "listings" || view === "orders" ? "listings" : SOCIAL_VIEWS.includes(view) ? view : "";
+}
+function followerListHTML() {
+  const q = fQuery.trim().toLowerCase();
+  const followingIds = social.following.map(p => p.id);
+  const rows = social.followers
+    .filter(p => p.name.toLowerCase().includes(q) && (fLevel === "all" || levelOf(p) === fLevel))
+    .map(p => personRow(p, followingIds.includes(p.id)
+      ? `<button class="pbtn soft" data-act="follow" data-id="${p.id}">Following</button>`
+      : `<button class="pbtn blue" data-act="follow" data-id="${p.id}">Follow</button>`));
+  return rows.join("") || `<div class="empty">No followers found.</div>`;
+}
+function requestsHTML() {
+  const rows = social.requests.map(p => personRow(p,
+    `<button class="pbtn blue" data-act="confirm" data-id="${p.id}">Confirm</button>
+     <button class="pbtn" data-act="decline" data-id="${p.id}">Decline</button>`)).join("");
+  return `
+  <div class="card reqbox">
+    <div class="reqhead">
+      <span class="grow">FOLLOW REQUESTS</span>
+      <span class="count">${social.requests.length} Pending</span>
+      <button class="pbtn soft" data-act="confirm-all">Confirm All</button>
+    </div>
+    ${rows}
+  </div>`;
+}
+function followersHTML() {
+  const levels = [["all", "All"], ["SHS", "SHS"], ["JHS", "JHS"]];
+  return `
+  <div class="card sochead">
+    <span class="sico">${icon("users")}</span>
+    <div class="grow"><b>${social.followers.length}</b><div class="muted s">Followers</div></div>
+    <button class="pbtn soft" data-act="toggle-requests">Requests <span class="count">${social.requests.length}</span></button>
+  </div>
+  ${showRequests && social.requests.length ? requestsHTML() : ""}
+  <input id="fSearch" class="sosearch" placeholder="Search followers..." value="${esc(fQuery)}">
+  <div class="seg">${levels.map(([v, t]) => `<button data-act="level" data-level="${v}" class="${fLevel === v ? "on" : ""}">${t}</button>`).join("")}</div>
+  <div id="fList">${followerListHTML()}</div>`;
+}
+function followingHTML() {
+  const rows = social.following.map(p => personRow(p,
+    `<button class="pbtn" data-act="unfollow" data-id="${p.id}">Unfollow</button>`)).join("");
+  return socialHead(social.following.length, "Following Accounts", "badge") +
+    (rows || `<div class="empty">You are not following anyone yet.</div>`);
+}
+function reviewsHTML() {
+  const avg = received.length ? (received.reduce((n, r) => n + r.stars, 0) / received.length).toFixed(1) : "0.0";
+  const list = received.map(r => `
+    <div class="card revcard">
+      <div class="row between"><b>${esc(r.name)}</b><span class="muted s">${esc(r.when)}</span></div>
+      <div class="stars">${stars(r.stars)}</div>
+      <p class="s">${esc(r.text)}</p>
+    </div>`).join("");
+  return `
+  <div class="card rating">
+    <b>${avg}</b>
+    <div class="muted s">${received.length ? received.length + " customer reviews" : "No customer reviews received yet"}</div>
+    <button class="btn outline sm" data-act="sample-review">Write Sample Review</button>
+  </div>
+  ${list || `<div class="empty">Reviews from verified student buyers will appear here.</div>`}`;
+}
+function renderSocial() {
+  const views = { followers: followersHTML, following: followingHTML, reviews: reviewsHTML };
+  $("#socialPane").innerHTML = views[ptab]();
+}
+function saveSocial() {
+  save("cc_social", social);
+  renderProfile();
+}
+const takeRequest = id => {
+  const p = social.requests.find(r => r.id === id);
+  social.requests = social.requests.filter(r => r.id !== id);
+  return p;
+};
+const socialActions = {
+  "toggle-requests": () => {
+    showRequests = !showRequests;
+    renderProfile();
+  },
+  level: b => {
+    fLevel = b.dataset.level;
+    renderProfile();
+  },
+  confirm: b => {
+    const p = takeRequest(b.dataset.id);
+    if (p)
+      social.followers.push(p);
+    saveSocial();
+  },
+  decline: b => {
+    takeRequest(b.dataset.id);
+    saveSocial();
+  },
+  "confirm-all": () => {
+    social.followers.push(...social.requests);
+    social.requests = [];
+    saveSocial();
+  },
+  follow: b => {
+    const id = b.dataset.id, already = social.following.some(p => p.id === id);
+    if (already)
+      social.following = social.following.filter(p => p.id !== id);
+    else
+      social.following.push(social.followers.find(p => p.id === id));
+    saveSocial();
+  },
+  unfollow: b => {
+    social.following = social.following.filter(p => p.id !== b.dataset.id);
+    saveSocial();
+  },
+  "sample-review": () => {
+    const s = SAMPLE_REVIEWS[received.length % SAMPLE_REVIEWS.length];
+    received.unshift({ ...s, stars: 5, when: "Just now" });
+    save("cc_received", received);
+    renderProfile();
+  }
+};
+$(".stats").addEventListener("click", e => {
+  const b = e.target.closest("[data-stat]");
+  if (!b)
+    return;
+  ptab = b.dataset.stat === "listings" ? (isSeller() ? "listings" : "orders") : b.dataset.stat;
+  renderTab();
+});
+$("#socialPane").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]");
+  if (b)
+    socialActions[b.dataset.act](b);
+});
+$("#socialPane").addEventListener("input", e => {
+  if (e.target.id !== "fSearch")
+    return;
+  fQuery = e.target.value;
+  $("#fList").innerHTML = followerListHTML();
+});
 $$(".ptab").forEach(b => b.onclick = () => {
   if (b.dataset.tab === "settings")
     return go("settings");

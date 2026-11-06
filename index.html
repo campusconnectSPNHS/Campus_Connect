@@ -410,10 +410,10 @@
           </div>
         </div>
         <div class="stats card">
-          <div><b id="stListings">0</b><span id="stLabel">Listings</span></div>
-          <div><b>48</b>Followers</div>
-          <div><b>20</b>Following</div>
-          <div><b id="stRev">0</b>Reviews</div>
+          <button type="button" class="stat" data-stat="listings"><b id="stListings">0</b><span id="stLabel">Listings</span></button>
+          <button type="button" class="stat" data-stat="followers"><b id="stFollowers">0</b><span>Followers</span></button>
+          <button type="button" class="stat" data-stat="following"><b id="stFollowing">0</b><span>Following</span></button>
+          <button type="button" class="stat" data-stat="reviews"><b id="stRev">0</b><span>Reviews</span></button>
         </div>
         <div class="ptabs">
           <button class="ptab on" data-tab="listings"><span><svg class="i" aria-hidden="true"><use href="#i-home"/></svg></span>My Listings</button>
@@ -421,11 +421,14 @@
           <button class="ptab" data-tab="orders"><span><svg class="i" aria-hidden="true"><use href="#i-box"/></svg></span>Orders</button>
           <button class="ptab" data-tab="settings"><span><svg class="i" aria-hidden="true"><use href="#i-gear"/></svg></span>Settings</button>
         </div>
-        <div class="row between">
-          <h2 id="tabTitle">My Listings</h2>
-          <button id="addBtn" class="btn primary sm" data-go="sell">＋ Add New Product</button>
+        <div id="tabPane">
+          <div class="row between">
+            <h2 id="tabTitle">My Listings</h2>
+            <button id="addBtn" class="btn primary sm" data-go="sell">＋ Add New Product</button>
+          </div>
+          <div class="grid" id="myGrid"></div>
         </div>
-        <div class="grid" id="myGrid"></div>
+        <div id="socialPane" class="hidden"></div>
       </section>
 
       <section id="settings" class="screen hidden">
@@ -618,8 +621,10 @@
         </button>
       </div>
     </div>
-    <script src="students.js"></script>
-    <script src="id_reader.js"></script>
-    <script src="brain.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="Students.js"></script>
+<script src="id_reader.js"></script>
+<script src="supabase.js"></script>
+<script src="brain.js"></script>
   </body>
 </html>
