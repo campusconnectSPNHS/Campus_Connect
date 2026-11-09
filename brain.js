@@ -144,14 +144,21 @@ $$(".eye").forEach(b => b.onclick = () => {
 $("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
   const id = $("#studentId"), pw = $("#password");
-  const email = id.value.trim().toLowerCase();
-  let ok = setErr(id, isEmail(email) ? "" : "Enter your email address.");
+  const idv = id.value.trim().toLowerCase().replace(/^@/, "");
+  let ok = setErr(id, idv ? "" : "Enter your LRN, username or school email.");
   ok = setErr(pw, pw.value ? "" : "Enter your password.") && ok;
   if (!ok)
     return;
+  let email = idv;
+  if (!isEmail(idv)) {
+    const { data } = await db.rpc("email_for_login", { identifier: idv });
+    if (!data)
+      return void setErr(pw, "Wrong ID/username or password.");
+    email = data;
+  }
   const { data, error } = await db.auth.signInWithPassword({ email, password: pw.value });
   if (error)
-    return void setErr(pw, "Wrong email or password.");
+    return void setErr(pw, "Wrong ID/username or password.");
   await startSession(data.user.id);
   toast("Welcome back, " + (me() ? me().name.split(" ")[0] : "") + "!");
   e.target.reset();
