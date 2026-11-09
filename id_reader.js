@@ -30,10 +30,10 @@
     return x ? x[0] : "";
   }
   function findGrade(text) {
-    const re = /GRADE\s*[-–—:]?\s*([0-9lIO]{1,2})(?![0-9])/gi;
+    const re = /GR[AI][DO0]E\s*[-–—:.]?\s*([0-9lIOSB|]{1,2})(?![0-9])/gi;
     let m;
     while ((m = re.exec(text))) {
-      const n = +m[1].replace(/[lI]/g, "1").replace(/O/g, "0");
+      const n = +m[1].replace(/[lI|]/g, "1").replace(/O/gi, "0").replace(/[SsBb]/g, "8");
       if (n >= 7 && n <= 12)
         return n;
     }
@@ -146,11 +146,18 @@
       for (const rot of [0, 90, 270, 180]) {
         if (rot && onNote)
           onNote("Trying another angle…");
+      
+        const passes = rot === 0
+          ? [["color", "3"], ["min", "3"], ["color", "6"], ["color", "11"], ["min", "6"]]
+          : [["color", "3"], ["min", "3"]];
         let text = "";
-        for (const mode of ["color", "min"]) {
-          const { data } = await worker.recognize(canvasOf(img, rot, mode));
+        for (const [mode, psm] of passes) {
+          await worker.setParameters({ tessedit_pageseg_mode: psm });
+          const { data } = await worker.recognize(canvasOf(img, rot, mode === "color" ? "color" : "min"));
           text += data.text + "\n";
           const r = analyze(text);
+          if (root.IDREADER_DEBUG)
+            console.log("[IDReader] rot=" + rot + " mode=" + mode + " psm=" + psm, r, "\n" + data.text);
           if (r.ok)
             return r;
           if (!best || RANK[r.reason] * 100 - r.schoolDist > RANK[best.reason] * 100 - best.schoolDist)
