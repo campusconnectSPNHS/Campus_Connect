@@ -149,13 +149,9 @@ $("#loginForm").addEventListener("submit", async e => {
   ok = setErr(pw, pw.value ? "" : "Enter your password.") && ok;
   if (!ok)
     return;
-  let email = idv;
-  if (!isEmail(idv)) {
-    const { data } = await db.rpc("email_for_login", { identifier: idv });
-    if (!data)
-      return void setErr(pw, "Wrong ID/username or password.");
-    email = data;
-  }
+  const { data: email } = await db.rpc("email_for_login", { identifier: idv });
+  if (!email)
+    return void setErr(pw, "Wrong ID/username or password.");
   const { data, error } = await db.auth.signInWithPassword({ email, password: pw.value });
   if (error)
     return void setErr(pw, "Wrong ID/username or password.");
