@@ -145,7 +145,7 @@ $("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
   const id = $("#studentId"), pw = $("#password");
   const idv = id.value.trim().toLowerCase().replace(/^@/, "");
-  let ok = setErr(id, idv ? "" : "Enter your LRN, username or school email.");
+  let ok = setErr(id, idv ? "" : "Enter your LRN or username.");
   ok = setErr(pw, pw.value ? "" : "Enter your password.") && ok;
   if (!ok)
     return;
