@@ -132,7 +132,7 @@ const ROLE = {
     can: ["You can browse and buy products from other students.", "You can chat with sellers.", "You can save and favorite items."], cant: "You cannot post or sell products."
   },
   seller: {
-    icon: "store", name: "Seller", level: "Senior High School", range: "Grade 11 – 12",
+    icon: "store", name: "Seller / Buyer", level: "Senior High School", range: "Grade 11 – 12",
     can: ["You can post and sell products.", "You can also buy products.", "You can chat with other users.", "You can manage your listings."]
   },
 };
