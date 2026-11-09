@@ -28,9 +28,32 @@ const save = (k, v) => {
     return false;
   }
 };
-let accounts = load("cc_accounts", []);
-let session = load("cc_session", null);
-let myItems = load("cc_mine", []);
+const db = window.supabaseClient;
+let accounts = [];
+const toAcct = p => ({
+  id: p.id, lrn: p.lrn, name: p.name, username: p.username, email: p.email, grade: p.grade,
+  strand: p.strand || "", role: p.role, section: p.section || "", bio: p.bio || "", avatar: p.avatar || "", verified: true
+});
+async function startSession(uid) {
+  session = uid;
+  const { data } = await db.from("profiles").select("*").eq("id", uid).maybeSingle();
+  accounts = data ? [toAcct(data)] : [];
+  await loadProducts();
+}
+async function loadProducts() {
+  const { data, error } = await db.from("products").select("*").order("created_at", { ascending: false });
+  if (error)
+    return toast("Couldn't load products.");
+  myItems = data.map(p => ({
+    id: p.id, owner: p.owner, seller: p.seller_name, name: p.name, price: p.price, cat: p.cat, desc: p.descr || "", photo: p.photo_url || ""
+  }));
+  if (curView === "home" || curView === "favorites")
+    renderGrid();
+  if (curView === "profile")
+    renderProfile();
+}
+let session = null;
+let myItems = [];
 let favs = load("cc_favs", []);
 let category = "All", query = "", photoData = "";
 const AUTH_VIEWS = ["auth", "scan", "verify", "idinfo", "role", "create", "welcome", "signup"];
@@ -118,20 +141,19 @@ $$(".eye").forEach(b => b.onclick = () => {
   const i = $("#" + b.dataset.eye);
   i.type = i.type === "password" ? "text" : "password";
 });
-$("#loginForm").addEventListener("submit", e => {
+$("#loginForm").addEventListener("submit", async e => {
   e.preventDefault();
   const id = $("#studentId"), pw = $("#password");
-  const idv = id.value.trim().toLowerCase().replace(/^@/, "");
-  let ok = setErr(id, idv ? "" : "Enter your LRN, username or school email.");
+  const email = id.value.trim().toLowerCase();
+  let ok = setErr(id, isEmail(email) ? "" : "Enter your email address.");
   ok = setErr(pw, pw.value ? "" : "Enter your password.") && ok;
   if (!ok)
     return;
-  const user = accounts.find(a => (a.id.toLowerCase() === idv || uname(a).toLowerCase() === idv || (a.email || "").toLowerCase() === idv) && a.password === pw.value);
-  if (!user)
-    return void setErr(pw, "Wrong ID/username or password.");
-  session = user.id;
-  save("cc_session", session);
-  toast("Welcome back, " + user.name.split(" ")[0] + "!");
+  const { data, error } = await db.auth.signInWithPassword({ email, password: pw.value });
+  if (error)
+    return void setErr(pw, "Wrong email or password.");
+  await startSession(data.user.id);
+  toast("Welcome back, " + (me() ? me().name.split(" ")[0] : "") + "!");
   e.target.reset();
   go("home");
 });
@@ -442,11 +464,23 @@ $("#createForm").addEventListener("submit", e => {
   });
   e.target.reset();
 });
-function enterAccount(acct) {
-  accounts.push(acct);
-  save("cc_accounts", accounts);
-  session = acct.id;
-  save("cc_session", session);
+async function enterAccount(acct) {
+  if (!acct.email)
+    return toast("Please use the Sign up form with your email.");
+  const { data, error } = await db.auth.signUp({ email: acct.email, password: acct.password });
+  if (error)
+    return toast(error.message);
+  if (!data.session)
+    return toast("Check your email to confirm your account, then log in.");
+  const { error: e2 } = await db.from("profiles").insert({
+    id: data.user.id, lrn: acct.id, name: acct.name, username: acct.username, email: acct.email,
+    grade: acct.grade, strand: acct.strand, role: acct.role
+  });
+  if (e2) {
+    await db.auth.signOut();
+    return toast(e2.code === "23505" ? "This LRN or username already has an account." : "Couldn't create the account.");
+  }
+  await startSession(data.user.id);
   if (acct.role === "seller") {
     $("#welcomeSub").textContent = "Welcome to CampusConnect, " + acct.name.split(" ")[0] + "!";
     $("#welcomeNote").textContent = "Your account is now ready. You can start selling and managing your products within our school.";
@@ -501,6 +535,7 @@ $("#toStore").onclick = () => {
   go("profile");
 };
 const allProducts = () => myItems;
+const myListings = () => myItems.filter(p => p.owner === session);
 function card(p, mine) {
   const thumb = p.photo
     ? `<div class="thumb img" style="background-image:url(${p.photo})"></div>`
@@ -547,16 +582,14 @@ $("#photo").addEventListener("change", e => {
   const f = e.target.files[0];
   if (!f)
     return;
-  const r = new FileReader();
-  r.onload = () => {
-    photoData = r.result;
+  shrink(f, 800, d => {
+    photoData = d;
     $("#preview").src = photoData;
     $("#preview").hidden = false;
     $("#uploadText").hidden = true;
-  };
-  r.readAsDataURL(f);
+  });
 });
-$("#sellForm").addEventListener("submit", e => {
+$("#sellForm").addEventListener("submit", async e => {
   e.preventDefault();
   if (!isSeller())
     return toast("Only Senior High School students (Grade 11–12) can sell.");
@@ -567,11 +600,23 @@ $("#sellForm").addEventListener("submit", e => {
   ok = setErr(c, c.value ? "" : "Choose a category.") && ok;
   if (/\b(vape|cigarettes?|alcohol|beer|guns?|knife|knives|weapons?|explosives?|drugs?|answer\s*keys?|fake\s*(id|documents?))\b/i.test(n.value + " " + $("#pDesc").value))
     return void setErr(n, "This item isn't allowed. See Safety & Rules.");
-  const item = {
-    id: Date.now(), name: n.value.trim(), price: Math.round(+p.value), cat: c.value, desc: $("#pDesc").value.trim(), photo: photoData.length < 400000 ? photoData : ""
-  };
-  myItems.unshift(item);
-  save("cc_mine", myItems);
+  if (!ok)
+    return;
+  let photo_url = null;
+  if (photoData) {
+    const blob = await (await fetch(photoData)).blob();
+    const path = session + "/" + Date.now() + ".jpg";
+    const up = await db.storage.from("product-photos").upload(path, blob, { contentType: "image/jpeg" });
+    if (up.error)
+      return toast("Couldn't upload the photo.");
+    photo_url = db.storage.from("product-photos").getPublicUrl(path).data.publicUrl;
+  }
+  const { error } = await db.from("products").insert({
+    seller_name: me().name, name: n.value.trim(), price: Math.round(+p.value), cat: c.value, descr: $("#pDesc").value.trim(), photo_url
+  });
+  if (error)
+    return toast("Couldn't post the product.");
+  await loadProducts();
   e.target.reset();
   photoData = "";
   $("#preview").hidden = true;
@@ -592,7 +637,7 @@ function renderProfile() {
   if (!seller && ptab === "listings")
     ptab = "favorites";
   $("#stLabel").textContent = seller ? "Listings" : "Orders";
-  $("#stListings").textContent = seller ? myItems.length : orders.length;
+  $("#stListings").textContent = seller ? myListings().length : orders.length;
   $("#stFollowers").textContent = social.followers.length;
   $("#stFollowing").textContent = social.following.length;
   $("#stRev").textContent = received.length;
@@ -615,7 +660,7 @@ function renderTab() {
   $("#addBtn").classList.toggle("hidden", ptab !== "listings");
   const g = $("#myGrid");
   if (ptab === "listings")
-    g.innerHTML = myItems.length ? myItems.map(p => card(p, true)).join("")
+    g.innerHTML = myListings().length ? myListings().map(p => card(p, true)).join("")
       : `<div class="empty">No listings yet.<br>Tap “Add New Product” to start selling.</div>`;
   else if (ptab === "favorites") {
     const l = allProducts().filter(p => favs.includes(p.id));
@@ -804,15 +849,19 @@ $("#myGrid").addEventListener("click", e => {
     renderProfile();
   }
   if (d && confirm("Delete this listing?")) {
-    myItems = myItems.filter(p => p.id !== +d.dataset.del);
-    save("cc_mine", myItems);
-    renderProfile();
-    toast("Listing deleted.");
+    db.from("products").delete().eq("id", +d.dataset.del).then(async ({ error }) => {
+      if (error)
+        return toast("Couldn't delete the listing.");
+      await loadProducts();
+      toast("Listing deleted.");
+    });
   }
 });
-const doLogout = () => {
+const doLogout = async () => {
+  await db.auth.signOut();
   session = null;
-  save("cc_session", null);
+  accounts = [];
+  myItems = [];
   toast("Logged out.");
   go("auth");
 };
@@ -821,7 +870,7 @@ let orders = load("cc_orders", []), reviews = load("cc_reviews", {}), helped = {
 const peso = n => "₱" + Number(n).toLocaleString("en-PH");
 const oldPrice = p => p.old || Math.round(p.price / 0.8);
 const findP = id => allProducts().find(p => p.id === id);
-const isMine = id => myItems.some(p => p.id === id);
+const isMine = id => myItems.some(p => p.id === id && p.owner === session);
 const BASE = {
   5: 84, 4: 12, 3: 3, 2: 1, 1: 0
 };
@@ -1662,4 +1711,9 @@ $("#messages").addEventListener("click", e => {
   if (c)
     openChat(c.dataset.chat, null, "messages");
 });
-go(session && me() ? "home" : "auth");
+(async () => {
+  const { data } = await db.auth.getSession();
+  if (data.session)
+    await startSession(data.session.user.id);
+  go(session && me() ? "home" : "auth");
+})();
