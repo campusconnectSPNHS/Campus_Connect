@@ -155,11 +155,15 @@ $("#loginForm").addEventListener("submit", async e => {
   if (!ok)
     return;
   const { data: email } = await db.rpc("email_for_login", { identifier: idv });
-  if (!email)
+  if (!email) {
+    console.warn("[login] no account found for", idv);
     return void setErr(pw, "Wrong ID/username or password.");
+  }
   const { data, error } = await db.auth.signInWithPassword({ email, password: pw.value });
-  if (error)
-    return void setErr(pw, "Wrong ID/username or password.");
+  if (error) {
+    console.warn("[login]", error.message);
+    return void setErr(pw, /confirm/i.test(error.message) ? "Your account isn't confirmed yet. Please contact the CampusConnect admin." : "Wrong ID/username or password.");
+  }
   await startSession(data.user.id);
   toast("Welcome back, " + (me() ? me().name.split(" ")[0] : "") + "!");
   e.target.reset();
@@ -501,8 +505,9 @@ async function enterAccount(acct) {
     grade: acct.grade, strand: acct.strand, role: acct.role
   });
   if (e2) {
+    console.error("[signup] profile insert failed", e2);
     await db.auth.signOut();
-    return toast(e2.code === "23505" ? "This LRN or username already has an account." : "Couldn't create the account.");
+    return toast(e2.code === "23505" ? "This LRN or username already has an account." : "Couldn't create the account: " + (e2.message || e2.code || "unknown error"));
   }
   await startSession(data.user.id);
   if (acct.role === "seller") {
