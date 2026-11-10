@@ -1,1 +1,1 @@
-window.STUDENT_DB = [];
+window.STUDENT_DB = []; 

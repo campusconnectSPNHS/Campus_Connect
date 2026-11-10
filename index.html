@@ -102,10 +102,6 @@
             </div>
           </div>
           <div class="field">
-              <input id="sEmail" type="email" autocomplete="email" placeholder="Email">
-              <small class="err"></small>
-            </div>
-          <div class="field">
               <input id="sPw" type="password" autocomplete="new-password" placeholder="Password">
               <button type="button" class="eye" data-eye="sPw" aria-label="Show password"><svg class="i" aria-hidden="true"><use href="#i-eye"/></svg></button>
               <small class="err"></small>
@@ -200,23 +196,10 @@
             <input id="iSid" placeholder="e.g. SPNHS-2026-12345">
             <small class="err"></small>
           </div>
-          <label class="lab" for="iGrade">Grade Level</label>
+          <label class="lab" for="iGrade">Grade Level &amp; Strand</label>
           <div class="field box">
             <select id="iGrade">
               <option value="">Select grade level</option>
-              <option>Grade 7</option>
-              <option>Grade 8</option>
-              <option>Grade 9</option>
-              <option>Grade 10</option>
-              <option>Grade 11</option>
-              <option>Grade 12</option>
-            </select>
-            <small class="err"></small>
-          </div>
-          <label class="lab" for="iStrand">Strand</label>
-          <div class="field box">
-            <select id="iStrand" disabled>
-              <option>Select grade level first</option>
             </select>
             <small class="err"></small>
           </div>
@@ -701,9 +684,9 @@
       </div>
     </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="Students.js"></script>
-<script src="id_reader.js"></script>
+<script src="Students.js?v=3"></script>
+<script src="id_reader.js?v=3"></script>
 <script src="supabase.js"></script>
-<script src="brain.js"></script>
+<script src="brain.js?v=3"></script>
   </body>
 </html>

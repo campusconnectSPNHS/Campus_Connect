@@ -120,6 +120,11 @@ const setErr = (input, msg) => {
 const isLRN = v => /^\d{12}$/.test(v);
 const isStudentId = v => /^[A-Za-z0-9-]{5,20}$/.test(v);
 const isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+// Students no longer type an email. Supabase Auth still needs one, so we build a
+// private placeholder from the LRN. It is never shown and never receives mail.
+const AUTH_DOMAIN = "campusconnectspnhs.github.io";
+const authEmail = lrn => String(lrn).toLowerCase().replace(/[^a-z0-9._-]/g, "") + "@" + AUTH_DOMAIN;
+const isAuthEmail = v => String(v || "").toLowerCase().endsWith("@" + AUTH_DOMAIN);
 const gradeNum = g => +String(g).replace(/\D/g, "");
 const roleFor = g => gradeNum(g) >= 11 ? "seller" : "buyer";
 const me = () => accounts.find(a => a.id === session);
@@ -181,11 +186,19 @@ const SCAN_MSG = {
 const FAIL_STEP = {
   "not-school": 1, unclear: 1, "wrong-year": 1, incomplete: 2
 };
-const lookupStudent = lrn => {
-  const db = window.STUDENT_DB;
-  if (!Array.isArray(db) || !db.length)
+// Checks the LRN against the "students" table in Supabase (see students_setup.sql).
+// Returns the student {name, grade, strand}, null if the LRN is not on the list,
+// or undefined if the check is off (empty table) or couldn't run.
+const lookupStudent = async lrn => {
+  try {
+    const { data, error } = await db.rpc("student_check", { p_lrn: String(lrn) });
+    if (error || !data || !data.enforced)
+      return undefined;
+    return data.student || null;
+  }
+  catch {
     return undefined;
-  return db.find(s => String(s.lrn) === String(lrn)) || null;
+  }
 };
 function scanFail(code) {
   const m = $("#scanErr");
@@ -232,7 +245,7 @@ async function scanFile(f) {
       await sleep(700);
       return scanFail(r.reason);
     }
-    const stu = lookupStudent(r.lrn);
+    const stu = await lookupStudent(r.lrn);
     if (stu === null) {
       setStep(1, "fail");
       await sleep(700);
@@ -392,42 +405,51 @@ document.addEventListener("click", e => {
   else if (e.target.closest("#rpSave"))
     saveResetPw();
 });
-function syncStrand() {
-  const g = $("#iGrade").value, st = $("#iStrand"), shs = gradeNum(g) >= 11, keep = st.value;
-  st.disabled = !g || !shs;
-  st.innerHTML = !g ? "<option>Select grade level first</option>" : !shs ? "<option>N/A (Junior High School)</option>"
-    : `<option value="">Select strand</option>${STRANDS.map(x => `<option>${x}</option>`).join("")}`;
-  if (shs && STRANDS.includes(keep))
-    st.value = keep;
-}
+// One combined field: "Grade 7" ... "Grade 10", or "Grade 11 - STEM" etc.
+// The option value is "Grade 11|STEM" (grade and strand separated by "|").
+const GRADES = ["Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12"];
+const gsOpt = (g, st) => `<option value="${g}${st ? "|" + st : ""}">${g}${st ? " – " + st : ""}</option>`;
+const allGradeOptions = () => `<option value="">Select grade level</option>${GRADES.map(g => gradeNum(g) >= 11 ? STRANDS.map(st => gsOpt(g, st)).join("") : gsOpt(g)).join("")}`;
 function prepIdForm() {
+  const sel = $("#iGrade");
   $("#iName").value = reg.name || (signupDraft ? signupDraft.first + " " + signupDraft.last : "");
   $("#iSid").value = reg.id || "";
   $("#iSid").readOnly = true;
-  $("#iGrade").value = reg.grade;
-  $("#iGrade").disabled = true;
-  syncStrand();
-  if (reg.strand) {
-    $("#iStrand").value = reg.strand;
-    $("#iStrand").disabled = true;
+  if (!reg.grade) {
+    sel.innerHTML = allGradeOptions();
+    sel.disabled = false;
   }
+  else if (gradeNum(reg.grade) < 11) {
+    sel.innerHTML = gsOpt(reg.grade);
+    sel.disabled = true;
+  }
+  else if (reg.strand) {
+    sel.innerHTML = gsOpt(reg.grade, reg.strand);
+    sel.disabled = true;
+  }
+  else {
+    // Senior High but the strand wasn't read from the ID: let the student pick it.
+    sel.innerHTML = `<option value="">Select your strand</option>${STRANDS.map(st => gsOpt(reg.grade, st)).join("")}`;
+    sel.disabled = false;
+  }
+  if (sel.options.length === 1)
+    sel.selectedIndex = 0;
   $$("#idForm .err").forEach(x => x.textContent = "");
   $$("#idForm .field").forEach(x => x.classList.remove("bad"));
 }
-$("#iGrade").addEventListener("change", syncStrand);
 $("#idForm").addEventListener("submit", e => {
   e.preventDefault();
-  const n = $("#iName"), s = $("#iSid"), g = $("#iGrade"), st = $("#iStrand"), sid = s.value.trim().toLowerCase();
-  const shs = gradeNum(g.value) >= 11;
+  const n = $("#iName"), s = $("#iSid"), g = $("#iGrade"), sid = s.value.trim().toLowerCase();
+  const [grade, strand = ""] = g.value.split("|");
+  const shs = gradeNum(grade) >= 11;
   let ok = setErr(n, n.value.trim().length >= 3 ? "" : "Enter your full name.");
   ok = setErr(s, !sid ? "Enter your student ID." : !(isLRN(sid) || isStudentId(sid)) ? "Use your student ID or 12-digit LRN." :
     accounts.some(a => a.id === sid) ? "This ID already has an account. Please log in." : "") && ok;
-  ok = setErr(g, g.value ? "" : "Select your grade level.") && ok;
-  ok = setErr(st, shs && !st.value ? "Select your strand." : "") && ok;
+  ok = setErr(g, !grade ? "Select your grade level." : shs && !strand ? "Select your strand." : "") && ok;
   if (!ok)
     return;
   reg = {
-    name: n.value.trim(), id: sid, grade: g.value, strand: shs ? st.value : "", role: roleFor(g.value)
+    name: n.value.trim(), id: sid, grade, strand: shs ? strand : "", role: roleFor(grade)
   };
   renderRole();
   go("role");
@@ -468,8 +490,7 @@ $("#createForm").addEventListener("submit", e => {
   e.target.reset();
 });
 async function enterAccount(acct) {
-  if (!acct.email)
-    return toast("Please use the Sign up form with your email.");
+  acct.email = acct.email || authEmail(acct.id);
   const { data, error } = await db.auth.signUp({ email: acct.email, password: acct.password });
   if (error)
     return toast(error.message);
@@ -496,18 +517,15 @@ async function enterAccount(acct) {
 }
 $("#signupForm").addEventListener("submit", e => {
   e.preventDefault();
-  const first = $("#sFirst"), last = $("#sLast"), mail = $("#sEmail"), pw = $("#sPw"), cf = $("#sCf"), terms = $("#sTerms");
-  const email = mail.value.trim().toLowerCase();
+  const first = $("#sFirst"), last = $("#sLast"), pw = $("#sPw"), cf = $("#sCf"), terms = $("#sTerms");
   let ok = setErr(first, first.value.trim().length >= 2 ? "" : "Enter your first name.");
   ok = setErr(last, last.value.trim().length >= 2 ? "" : "Enter your last name.") && ok;
-  ok = setErr(mail, !isEmail(email) ? "Enter a valid email address." :
-    accounts.some(a => (a.email || "").toLowerCase() === email) ? "This email already has an account." : "") && ok;
   ok = setErr(pw, pw.value.length >= 8 && /[A-Za-z]/.test(pw.value) && /\d/.test(pw.value) ? "" : "Use 8+ characters with letters and numbers.") && ok;
   ok = setErr(cf, cf.value && cf.value === pw.value ? "" : "Passwords do not match.") && ok;
   $("#sTermsErr").textContent = terms.checked ? "" : "Please accept the Terms of Use and Privacy Policy.";
   if (!ok || !terms.checked)
     return;
-  signupDraft = { first: first.value.trim(), last: last.value.trim(), email, password: pw.value };
+  signupDraft = { first: first.value.trim(), last: last.value.trim(), password: pw.value };
   reg = {};
   setScanMode("signup");
   $("#scanErr").classList.add("hidden");
@@ -521,7 +539,7 @@ function finishSignup() {
     toast("This ID already has an account. Please log in.");
     return go("auth");
   }
-  let base = signupDraft.email.split("@")[0].replace(/[^a-z0-9._]/gi, "").slice(0, 16);
+  let base = (signupDraft.first + signupDraft.last).replace(/[^a-z0-9._]/gi, "").toLowerCase().slice(0, 16);
   if (base.length < 3)
     base += "user";
   let username = base, n = 1;
@@ -530,7 +548,7 @@ function finishSignup() {
   const d = signupDraft;
   signupDraft = null;
   enterAccount({
-    name: reg.name, id: reg.id, email: d.email, password: d.password, username, grade: reg.grade, strand: reg.strand, role: reg.role, verified: true
+    name: reg.name, id: reg.id, email: authEmail(reg.id), password: d.password, username, grade: reg.grade, strand: reg.strand, role: reg.role, verified: true
   });
 }
 $("#toStore").onclick = () => {
@@ -1506,7 +1524,7 @@ $("#settings").addEventListener("click", e => {
 $("#sBack").onclick = () => go("profile");
 $("#pMore").onclick = () => go("settings");
 const uname = a => a.username || a.id.split("@")[0].replace(/[^a-z0-9._]/gi, "").slice(0, 20);
-const maskEmail = id => isEmail(id) ? id.replace(/^(.{1,3}).*(@.*)$/, (m, a, b) => a + "••••••••" + b) : "No school email added";
+const maskEmail = id => isEmail(id) && !isAuthEmail(id) ? id.replace(/^(.{1,3}).*(@.*)$/, (m, a, b) => a + "••••••••" + b) : "No school email added";
 const setAvatar = (el, u) => {
   el.innerHTML = u.avatar ? `<img src="${u.avatar}" alt="">` : esc(initials(u.name));
 };
