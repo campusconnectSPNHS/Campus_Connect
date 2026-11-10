@@ -475,7 +475,7 @@ $("#cPw").addEventListener("input", e => {
   $('#pwHints [data-h="len"]').classList.toggle("ok", v.length >= 8);
   $('#pwHints [data-h="mix"]').classList.toggle("ok", /[A-Za-z]/.test(v) && /\d/.test(v));
 });
-$("#createForm").addEventListener("submit", e => {
+$("#createForm").addEventListener("submit", async e => {
   e.preventDefault();
   const u = $("#cUser"), pw = $("#cPw"), cf = $("#cCf"), un = u.value.trim().replace(/^@/, "");
   let ok = setErr(u, !/^[a-z0-9._]{3,20}$/i.test(un) ? "3–20 letters, numbers, dots or underscores." :
@@ -488,10 +488,16 @@ $("#createForm").addEventListener("submit", e => {
     toast("This ID already has an account. Please log in.");
     return go("auth");
   }
-  enterAccount({
+  const form = e.target, btn = form.querySelector("button.primary");
+  if (btn)
+    btn.disabled = true;
+  const created = await enterAccount({
     name: reg.name, id: reg.id, password: pw.value, username: un, grade: reg.grade, strand: reg.strand, role: reg.role, verified: true
   });
-  e.target.reset();
+  if (btn)
+    btn.disabled = false;
+  if (created)
+    form.reset();
 });
 async function enterAccount(acct) {
   acct.email = acct.email || authEmail(acct.id);
@@ -519,6 +525,7 @@ async function enterAccount(acct) {
     toast("Welcome to CampusConnect, " + acct.name.split(" ")[0] + "!");
     go("home");
   }
+  return true;
 }
 $("#signupForm").addEventListener("submit", e => {
   e.preventDefault();
