@@ -191,9 +191,6 @@ const SCAN_MSG = {
 const FAIL_STEP = {
   "not-school": 1, unclear: 1, "wrong-year": 1, incomplete: 2
 };
-// Checks the LRN against the "students" table in Supabase (see students_setup.sql).
-// Returns the student {name, grade, strand}, null if the LRN is not on the list,
-// or undefined if the check is off (empty table) or couldn't run.
 const lookupStudent = async lrn => {
   try {
     const { data, error } = await db.rpc("student_check", { p_lrn: String(lrn) });
@@ -1619,8 +1616,6 @@ const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", min
 const snap = p => ({
   pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: p.bg || "#dbe9ff", cat: p.cat
 });
-// Chats are stored in Supabase (table "messages"). A conversation is keyed by the
-// other person's user id; peerNames maps that id to a display name.
 const peerIdByName = name => {
   if (peerNames[name])
     return name;
@@ -1721,7 +1716,6 @@ function renderChat() {
     $("#cPending").innerHTML = `<button class="px" data-pclose aria-label="Remove">✕</button>${prodCard(pending)}<button class="send" id="cSendP">Send</button>`;
   window.scrollTo(0, document.body.scrollHeight);
 }
-// Replies now come from the real person on the other end (see subscribeChats).
 function autoReply() {}
 function sendText() {
   const t = $("#cText"), v = t.value.trim();

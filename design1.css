@@ -497,7 +497,6 @@ h2 {
   color: var(--blue);
 }
 
-/* Social panes: followers, following, reviews */
 #socialPane {
   display: grid;
   gap: 12px;
