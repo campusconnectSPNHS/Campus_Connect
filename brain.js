@@ -575,13 +575,19 @@ const myListings = () => myItems.filter(p => p.owner === session);
 function card(p, mine) {
   const thumb = p.photo
     ? `<div class="thumb img" style="background-image:url(${p.photo})"></div>`
-    : `<div class="thumb" style="background:${p.bg || "#dbe9ff"}">${icon("bag")}</div>`;
+    : `<div class="thumb" data-cat="${esc(p.cat)}" style="background:${bgOf(p)}">${icon("bag")}</div>`;
   return `<article class="prod" data-pid="${p.id}">${thumb}
   ${mine ? '<span class="badge">Active</span><button class="dots" data-del="' + p.id + '" aria-label="Delete listing">⋮</button>'
     : `<button class="heart ${favs.includes(p.id) ? "on" : ""}" data-fav="${p.id}" aria-label="Favorite">${favs.includes(p.id) ? "♥" : "♡"}</button>`}
-  <div class="pinfo"><b>${esc(p.name)}</b><div class="price">₱${p.price}</div>
+  <div class="pinfo"><span class="ctag" data-cat="${esc(p.cat)}">${esc(p.cat)}</span><b>${esc(p.name)}</b><div class="price">₱${p.price}</div>
   <div class="seller">${mine ? `${p.sold || 0} sold &nbsp; ♡ ${p.likes || 0}` : `<span class="av">${initial(p.seller || "Student Seller")}</span>${esc(p.seller || "Student Seller")}`}</div></div></article>`;
 }
+const CATS = {
+  "School Supplies": { bg: "#e6efff" },
+  Food: { bg: "#fff1dc" },
+  Accessories: { bg: "#f3e8ff" }
+};
+const bgOf = p => p.bg || (CATS[p.cat] || {}).bg || "#dbe9ff";
 const esc = s => String(s).replace(/[&<>"']/g, c => ({
   "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
 }[c]));
@@ -941,7 +947,7 @@ function openDetail(id) {
   if (!p)
     return;
   cur = {
-    p, color: p.colors ? p.colors[0].n : "", size: p.sizes ? (p.sizes[1] || p.sizes[0]) : "", qty: 1
+    p, color: p.colors ? p.colors[0].n : "", size: p.sizes ? (p.sizes[1] || p.sizes[0]) : "", qty: 1, method: "meetup"
   };
   dtab = "overview";
   writing = false;
@@ -962,13 +968,13 @@ function renderDetail() {
   let h = "";
   if (dtab === "overview") {
     const hero = p.photo ? `<div class="hero img" style="background-image:url(${p.photo})"></div>`
-      : `<div class="hero" style="background:${col ? col.c : (p.bg || "#dbe9ff")}">${icon("bag")}</div>`;
+      : `<div class="hero" style="background:${col ? col.c : (bgOf(p))}">${icon("bag")}</div>`;
     h = hero + `<div class="deal"><span>Student Deal</span><b>20% OFF</b></div>
   <div class="dpanel">${priceRow(p)}<h2 class="pname">${esc(p.name)}</h2>
   <div class="rate"><span class="stars">★</span> <b>${st.avg}</b> <span class="muted">(${st.n} feedback)</span></div>${colorChips(p)}${sizePills(p)}</div>`;
   }
   else if (dtab === "description") {
-    h = `<div class="dpanel"><h2>Description</h2><p>${esc(p.desc || "The seller hasn't added a description yet.")}</p><p class="muted s">Category: ${esc(p.cat)}</p></div>`;
+    h = `<div class="dpanel"><h2>Description</h2><p>${esc(p.desc || "The seller hasn't added a description yet.")}</p><p class="s">Category: <span class="ctag" data-cat="${esc(p.cat)}">${esc(p.cat)}</span></p></div>`;
   }
   else {
     const bars = [5, 4, 3, 2, 1].map(s => {
@@ -1057,8 +1063,8 @@ const getAddr = () => {
 };
 const phoneOk = v => /^(\+63|0)9\d{9}$/.test(v.replace(/[\s-]/g, ""));
 function renderBuy() {
-  const p = cur.p, st = stats(p.id), col = colorOf(p), sub = p.price * cur.qty, ship = 50, stock = p.stock || 24, a = getAddr();
-  const bg = col ? col.c : (p.bg || "#dbe9ff");
+  const p = cur.p, st = stats(p.id), col = colorOf(p), sub = p.price * cur.qty, ship = feeOf(), stock = p.stock || 24, a = getAddr();
+  const bg = col ? col.c : (bgOf(p));
   $("#buyBody").innerHTML = `
   <div class="dpanel row"><div class="mini" style="background:${bg}">${icon("bag")}</div><div class="grow"><b>${esc(p.name)}</b><div class="rate"><span class="stars">★</span> ${st.avg} <span class="muted s">(${st.n} feedback)</span></div>${priceRow(p)}</div></div>
   <div class="dpanel"><h3>Product Details</h3>
@@ -1069,6 +1075,7 @@ function renderBuy() {
   <div class="sumrow"><span>Subtotal</span><span>${peso(sub)}</span></div>
   <div class="sumrow"><span>Shipping Fee</span><span>${peso(ship)}</span></div>
   <div class="sumrow tot"><span>Total</span><span>${peso(sub + ship)}</span></div></div>
+  ${methodPills()}
   <h3 class="hh">Shipping Address</h3>
   <div class="dpanel row addr"><div class="grow"><b>${esc(a.name)}</b><div class="muted s">${a.phone ? esc(a.phone) : "Add your contact number"}</div><div class="s">${esc(a.line)}</div></div><button class="chg" id="chgAddr">Change ›</button></div>
   <h3 class="hh">Payment Method</h3>
@@ -1109,6 +1116,8 @@ $("#buy").addEventListener("click", async e => {
   const p = cur.p;
   if ((el = q("[data-q]")))
     cur.qty = Math.min(p.stock || 24, Math.max(1, cur.qty + +el.dataset.q));
+  else if ((el = q("[data-method]")))
+    cur.method = el.dataset.method;
   else if (q("#chgAddr"))
     return openAddr();
   else if (q("#bProd"))
@@ -1127,9 +1136,9 @@ $("#buy").addEventListener("click", async e => {
     const sub = p.price * cur.qty;
     const { data: row, error } = await db.from("orders").insert({
       seller: p.owner, buyer_name: me().name, seller_name: p.seller || "Student Seller",
-      product_id: String(p.id), name: p.name, bg: (colorOf(p) || {}).c || p.bg || "#dbe9ff",
+      product_id: String(p.id), name: p.name, bg: (colorOf(p) || {}).c || bgOf(p),
       color: cur.color || "", size: cur.size || "", qty: cur.qty,
-      subtotal: sub, shipping_fee: SHIPPING_FEE, total: sub + SHIPPING_FEE, addr: getAddr()
+      subtotal: sub, shipping_fee: feeOf(), total: sub + feeOf(), addr: { ...getAddr(), method: cur.method || "meetup" }
     }).select().single();
     btn.disabled = false;
     if (error) {
@@ -1148,7 +1157,13 @@ $("#buy").addEventListener("click", async e => {
     return;
   renderBuy();
 });
-const SHIPPING_FEE = 50;
+const SHIPPING_FEE = 50; // fallback for older orders
+const DELIVERY = {
+  meetup: { label: "Campus Meetup", fee: 0, note: "Meet the seller at a school-approved area. No fee." },
+  delivery: { label: "Campus Delivery", fee: 30, note: "The seller brings it to you on campus." }
+};
+const feeOf = () => (DELIVERY[cur.method] || DELIVERY.meetup).fee;
+const methodPills = () => `<h3 class="hh">Delivery Option</h3><div class="dpanel"><div class="pills">${Object.entries(DELIVERY).map(([k, d]) => `<button class="pill ${(cur.method || "meetup") === k ? "on" : ""}" data-method="${k}">${d.label} · ${d.fee ? peso(d.fee) : "Free"}</button>`).join("")}</div><p class="muted s">${(DELIVERY[cur.method] || DELIVERY.meetup).note}</p></div>`;
 const ORDER_FILTERS = ["All", "Pending", "Processing", "Completed", "Cancelled"];
 // Time limits (the same numbers live in orders_setup.sql).
 const ORDER_RESPOND_HOURS = 24, ORDER_CONFIRM_DAYS = 3;
@@ -1162,7 +1177,7 @@ function toOrder(r) {
     total: +r.total, shipping: +r.shipping_fee, status: r.status, reason: r.cancel_reason || "",
     created: +new Date(r.created_at), date: new Date(r.created_at).toLocaleDateString("en-PH"),
     seller: r.seller_name, sellerId: r.seller, buyerId: r.buyer, buyerName: r.buyer_name,
-    addr: r.addr || {}, expiresAt: r.expires_at ? +new Date(r.expires_at) : 0,
+    addr: r.addr || {}, expiresAt: r.expires_at ? +new Date(r.expires_at) : +new Date(r.created_at) + ORDER_RESPOND_HOURS * 3600000,
     confirmBy: r.confirm_by ? +new Date(r.confirm_by) : 0, actor: r.last_actor
   };
 }
@@ -1174,6 +1189,7 @@ async function loadOrders() {
   if (error)
     return void console.warn("[orders] load failed", error.message);
   orders = data.map(toOrder);
+  syncOrderNotifs();
   updateCartBadge();
   if (curView === "orders")
     $("#ordersList").innerHTML = ordersHTML();
@@ -1185,26 +1201,20 @@ async function loadOrders() {
 function subscribeOrders() {
   if (orderChannel)
     db.removeChannel(orderChannel);
-  orderChannel = db.channel("orders-" + session).on("postgres_changes", { event: "*", schema: "public", table: "orders" }, async ({ eventType, new: r }) => {
-    await loadOrders();
-    if (!r || !r.id || r.last_actor === session)
-      return;
-    const o = findOrder(r.id);
-    if (!o)
-      return;
-    const ref = refOf(o), asBuyer = o.buyerId === session;
-    if (eventType === "INSERT" && !asBuyer)
-      notify("order", "New Order", `${o.buyerName} ordered ${o.name}. Please respond within ${ORDER_RESPOND_HOURS} hours.`, { order: o.id });
-    else if (eventType === "UPDATE")
-      notify("order", "Order Update", asBuyer
-        ? `Your order #${ref} is now ${o.status}.${o.reason ? " " + o.reason + "." : ""}`
-        : `Order #${ref} is now ${o.status}.${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
-  }).subscribe();
+  orderChannel = db.channel("orders-" + session).on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => loadOrders()).subscribe();
 }
 const leftLabel = ms => {
   const m = Math.max(0, Math.round(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
   return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
 };
+const WINDOW_MS = { Pending: ORDER_RESPOND_HOURS * 3600000, Processing: ORDER_CONFIRM_DAYS * 86400000 };
+function deadlineBar(o) {
+  const st = statusOf(o), end = st === "Pending" ? o.expiresAt : st === "Processing" ? o.confirmBy : 0;
+  if (!end)
+    return "";
+  const left = Math.max(0, end - Date.now()), pct = Math.min(100, Math.round(left / WINDOW_MS[st] * 100));
+  return `<div class="dbar ${pct <= 25 ? "urgent" : ""}"><i style="width:${pct}%"></i></div>`;
+}
 const deadlineLine = o => statusOf(o) === "Pending" ? `Seller must respond in ${leftLabel(o.expiresAt - Date.now())}`
   : statusOf(o) === "Processing" ? `Auto-completes in ${leftLabel(o.confirmBy - Date.now())} unless confirmed` : "";
 async function orderAction(action) {
@@ -1261,7 +1271,7 @@ const orderCard = o => `
       <div class="muted s">${esc(o.name)}</div>
       <div class="muted s">${o.sellerId === session ? "Buyer: " + esc(o.buyerName) : "Seller: " + esc(o.seller)}</div>
       <div class="muted s">${o.date} · ${itemsLabel(o)}</div>
-      ${deadlineLine(o) ? `<div class="muted s">⏳ ${deadlineLine(o)}</div>` : ""}
+      ${deadlineLine(o) ? `<div class="muted s">${deadlineLine(o)}</div>${deadlineBar(o)}` : ""}
     </div>
     ${statusPill(o)}
     <span class="chev">›</span>
@@ -1302,13 +1312,14 @@ function renderOrder() {
         ? (buyer ? "The seller has " + ORDER_RESPOND_HOURS + " hours to accept your order. If they don't, it is cancelled automatically."
           : "Please accept or decline within " + ORDER_RESPOND_HOURS + " hours, or the order is cancelled automatically.")
         : "Meet up or deliver, then mark it completed. If nobody confirms within " + ORDER_CONFIRM_DAYS + " days, it completes automatically."}</p>
-      ${deadlineLine(o) ? `<p class="muted s">⏳ ${deadlineLine(o)}</p>` : ""}</div>`;
+      ${deadlineLine(o) ? `<p class="muted s">${deadlineLine(o)}</p>${deadlineBar(o)}` : ""}</div>`;
   $("#odBody").innerHTML = `
     <div class="row between">
       <h2 class="bt">Order Details</h2>
       <button class="odref" id="odCopy" aria-label="Copy order number">#${refOf(o)} ${icon("copy")}</button>
     </div>
     <div>${statusPill(o)}</div>
+    ${stepperHTML(st)}
     <p class="muted s">Ordered on ${o.date} · ${itemsLabel(o)} · ${buyer ? "Seller: " + esc(o.seller) : "Buyer: " + esc(o.buyerName)}</p>
     <div class="dpanel row">
       <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
@@ -1328,6 +1339,7 @@ function renderOrder() {
     <div class="odactions">${actions}</div>
     <div class="card odaddr">
       <b>${buyer ? "Shipping Address" : "Deliver or meet the buyer"}</b>
+      ${a.method && DELIVERY[a.method] ? `<div class="s">${DELIVERY[a.method].label}</div>` : ""}
       <div>${esc(a.name || "")}</div>
       <div class="muted s">${esc(a.phone || "")}</div>
       <div class="muted s">${esc(a.line || "")}</div>
@@ -1494,6 +1506,8 @@ document.addEventListener("click", e => {
     saveAddr();
   if (e.target.closest("#pwSave"))
     savePw();
+  if (e.target.closest("#nRole, #ndRole, #nsRole"))
+    openRoleSheet();
   if (e.target.closest("#hsSend"))
     sendHelp();
 });
@@ -1513,7 +1527,7 @@ Object.assign(prefs, { inquiries: prefs.inquiries ?? true, announce: prefs.annou
 const NOTIF_TYPES = {
   message: { label: "Messages", icon: "chat", pref: "msgs" },
   order: { label: "Order Updates", icon: "box", pref: "orders" },
-  inquiry: { label: "Inquiries", icon: "search", pref: "inquiries" },
+  inquiry: { label: "Inquiries", icon: "search", pref: "inquiries", sellerOnly: true },
   announcement: { label: "Announcements", icon: "megaphone", pref: "announce" }
 };
 const ORDER_STEPS = ["Pending", "Processing", "Completed", "Cancelled"];
@@ -1559,11 +1573,13 @@ function timeAgo(ts) {
 const fullDate = ts => new Date(ts).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" }) +
   " · " + new Date(ts).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
 
+const typesForRole = () => Object.entries(NOTIF_TYPES).filter(([, t]) => !t.sellerOnly || isSeller());
+const roleLink = id => `<button type="button" class="rolelink" id="${id}">${icon(ROLE[roleOfUser(me())].icon)}<span>You are a <b>${ROLE[roleOfUser(me())].name}</b>. See what your role can do</span><span>›</span></button>`;
 function renderNotifs() {
-  const filters = ["All", ...Object.values(NOTIF_TYPES).map(t => t.label)];
+  const filters = ["All", ...typesForRole().map(([, t]) => t.label)];
   $("#nChips").innerHTML = filters.map(f => `<button class="chip ${f === notifFilter ? "on" : ""}" data-nfilter="${f}">${f}</button>`).join("");
   const list = notifs.filter(n => notifFilter === "All" || NOTIF_TYPES[n.type].label === notifFilter);
-  $("#nList").innerHTML = list.length ? list.map(n => `
+  $("#nList").innerHTML = roleLink("nRole") + (list.length ? list.map(n => `
     <button class="nitem ${n.read ? "" : "unread"}" data-notif="${n.id}">
       <span class="nico ${n.type}">${icon(NOTIF_TYPES[n.type].icon)}</span>
       <div class="grow"><b>${esc(n.title)}</b><div class="muted s">${esc(n.body)}</div></div>
@@ -1573,7 +1589,7 @@ function renderNotifs() {
       <span class="nbell">${icon("bell")}</span>
       <h3>No Notifications Yet</h3>
       <p class="muted s">You're all caught up! New updates will appear here when you have them.</p>
-    </div>`;
+    </div>`);
 }
 function stepperHTML(status) {
   const at = ORDER_STEPS.indexOf(status), cancelled = status === "Cancelled";
@@ -1601,7 +1617,8 @@ function notifDetailHTML(n) {
           <div class="muted s">${peso((o.total - (o.shipping != null ? o.shipping : SHIPPING_FEE)) / o.qty)} · Qty: ${o.qty}</div>
         </div>
       </div>
-      <button class="btn outline" id="ndOrder">View Order</button>`;
+      <button class="btn outline" id="ndOrder">${o.sellerId === session ? "Go to Orders to Fulfill" : "View My Order"}</button>
+      ${roleLink("ndRole")}`;
   if (n.ref && n.ref.chat)
     return `${head}
       <div class="card ndmsg">
@@ -1609,7 +1626,7 @@ function notifDetailHTML(n) {
         <div><b>${esc(n.ref.chat)}</b><div>${esc(n.body.replace(n.ref.chat + ": ", ""))}</div></div>
       </div>
       <button class="btn primary" id="ndReply">Reply</button>`;
-  return `${head}<p>${esc(n.body)}</p>`;
+  return `${head}<p>${esc(n.body)}</p>${roleLink("ndRole")}`;
 }
 function showNotif(id) {
   const n = notifs.find(x => x.id === id);
@@ -1622,10 +1639,10 @@ function showNotif(id) {
   $("#ndBody").innerHTML = notifDetailHTML(n);
 }
 function renderNotifSettings() {
-  $("#nsBody").innerHTML = toggles([
+  $("#nsBody").innerHTML = roleLink("nsRole") + toggles([
     ["msgs", `${icon("chat")} Messages`],
     ["orders", `${icon("box")} Order Updates`],
-    ["inquiries", `${icon("search")} Product Inquiries`],
+    ...(isSeller() ? [["inquiries", `${icon("search")} Product Inquiries`]] : []),
     ["announce", `${icon("megaphone")} School Announcements`]
   ]);
 }
@@ -1764,10 +1781,8 @@ $("#editForm").addEventListener("submit", e => {
 let chats = {}, peerNames = {}, chatKey = "", pending = null, chatFrom = "messages", msgChannel = null;
 const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
 const snap = p => ({
-  pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: p.bg || "#dbe9ff", cat: p.cat
+  pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: bgOf(p), cat: p.cat
 });
-// Chats are stored in Supabase (table "messages"). A conversation is keyed by the
-// other person's user id; peerNames maps that id to a display name.
 const peerIdByName = name => {
   if (peerNames[name])
     return name;
@@ -1868,7 +1883,6 @@ function renderChat() {
     $("#cPending").innerHTML = `<button class="px" data-pclose aria-label="Remove">✕</button>${prodCard(pending)}<button class="send" id="cSendP">Send</button>`;
   window.scrollTo(0, document.body.scrollHeight);
 }
-// Replies now come from the real person on the other end (see subscribeChats).
 function autoReply() {}
 function sendText() {
   const t = $("#cText"), v = t.value.trim();
@@ -1972,3 +1986,26 @@ $("#messages").addEventListener("click", e => {
     await startSession(data.session.user.id);
   go(session && me() ? "home" : "auth");
 })();
+setInterval(() => {
+  if (!session || document.hidden || !$("#sheet").classList.contains("hidden"))
+    return;
+  if (curView === "orders")
+    $("#ordersList").innerHTML = ordersHTML();
+  else if (curView === "orderdetail")
+    renderOrder();
+}, 60000);
+
+function syncOrderNotifs() {
+  const map = load("cc_order_seen", {});
+  orders.forEach(o => {
+    const st = statusOf(o), asBuyer = o.buyerId === session, known = o.id in map;
+    if (!asBuyer && !known && st === "Pending") {
+      notify("order", "New Order", `${o.buyerName} ordered ${o.name}. Please respond within ${ORDER_RESPOND_HOURS} hours.`, { order: o.id });
+      toast("You have a new order to process.");
+    }
+    else if (known && map[o.id] !== st && o.actor !== session)
+      notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
+    map[o.id] = st;
+  });
+  save("cc_order_seen", map);
+}
