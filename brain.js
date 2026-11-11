@@ -39,6 +39,7 @@ async function startSession(uid) {
   const { data } = await db.from("profiles").select("*").eq("id", uid).maybeSingle();
   accounts = data ? [toAcct(data)] : [];
   await loadProducts();
+  await loadChats();
 }
 async function loadProducts() {
   const { data, error } = await db.from("products").select("*").order("created_at", { ascending: false });
@@ -897,6 +898,12 @@ const doLogout = async () => {
   session = null;
   accounts = [];
   myItems = [];
+  if (msgChannel) {
+    db.removeChannel(msgChannel);
+    msgChannel = null;
+  }
+  chats = {};
+  peerNames = {};
   toast("Logged out.");
   go("auth");
 };
@@ -1607,13 +1614,31 @@ $("#editForm").addEventListener("submit", e => {
   toast("Profile updated.");
   go("profile");
 });
-let chats = load("cc_chats", {}), chatKey = "", pending = null, chatFrom = "messages";
+let chats = {}, peerNames = {}, chatKey = "", pending = null, chatFrom = "messages", msgChannel = null;
 const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
 const snap = p => ({
   pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: p.bg || "#dbe9ff", cat: p.cat
 });
+// Chats are stored in Supabase (table "messages"). A conversation is keyed by the
+// other person's user id; peerNames maps that id to a display name.
+const peerIdByName = name => {
+  if (peerNames[name])
+    return name;
+  const hit = Object.keys(peerNames).find(k => peerNames[k] === name);
+  if (hit)
+    return hit;
+  const p = myItems.find(x => x.seller === name && x.owner && x.owner !== session);
+  return p ? p.owner : "";
+};
 function openChat(seller, p, from) {
-  chatKey = seller;
+  const id = (p && p.owner) || peerIdByName(seller);
+  if (!id)
+    return toast("This seller isn't available for chat yet.");
+  if (id === session)
+    return toast("This is your own listing.");
+  if (!peerNames[id])
+    peerNames[id] = (p && p.seller) || seller;
+  chatKey = id;
   pending = p ? snap(p) : null;
   chatFrom = from || "messages";
   $("#cAttach").classList.add("hidden");
@@ -1621,8 +1646,64 @@ function openChat(seller, p, from) {
   renderChat();
 }
 function pushMsg(m, key = chatKey) {
-  (chats[key] = chats[key] || []).push({ ...m, t: hhmm() });
-  save("cc_chats", chats);
+  const id = peerNames[key] ? key : peerIdByName(key);
+  if (!id)
+    return;
+  const body = { ...m };
+  delete body.from;
+  delete body.type;
+  (chats[id] = chats[id] || []).push({ ...m, t: hhmm() });
+  db.from("messages").insert({
+    recipient: id, type: m.type, body, sender_name: me().name, recipient_name: peerNames[id] || ""
+  }).then(({ error }) => {
+    if (error) {
+      console.error("[chat] send failed", error);
+      toast("Message not sent: " + (error.message || error.code));
+    }
+  });
+}
+const msgPreview = m => m.type === "text" ? m.text : m.type === "image" ? "Photo" : m.type === "order" ? "Order" : m.name;
+const fmtT = iso => new Date(iso).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+function addRemote(r) {
+  const mine = r.sender === session, peer = mine ? r.recipient : r.sender;
+  peerNames[peer] = (mine ? r.recipient_name : r.sender_name) || peerNames[peer] || "Student";
+  const l = (chats[peer] = chats[peer] || []);
+  if (l.some(x => x.id === r.id))
+    return null;
+  return { peer, l, m: { ...(r.body || {}), id: r.id, type: r.type, from: mine ? "me" : "them", t: fmtT(r.created_at) } };
+}
+async function loadChats() {
+  const { data, error } = await db.from("messages").select("*").order("created_at", { ascending: true }).limit(1000);
+  if (error)
+    return void console.warn("[chat] load failed", error.message);
+  chats = {};
+  data.forEach(r => {
+    const x = addRemote(r);
+    if (x)
+      x.l.push(x.m);
+  });
+  subscribeChats();
+  if (curView === "messages")
+    renderChatList();
+}
+function subscribeChats() {
+  if (msgChannel)
+    db.removeChannel(msgChannel);
+  msgChannel = db.channel("messages-" + session).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, ({ new: r }) => {
+    if (r.recipient !== session || r.sender === session)
+      return;
+    const x = addRemote(r);
+    if (!x)
+      return;
+    x.l.push(x.m);
+    if (curView === "chat" && chatKey === x.peer)
+      renderChat();
+    else {
+      notify("message", "New Message", `${peerNames[x.peer]}: ${msgPreview(x.m)}`, { chat: x.peer });
+      if (curView === "messages")
+        renderChatList();
+    }
+  }).subscribe();
 }
 const prodCard = m => `<div class="mini" style="background:${m.bg};width:52px;height:52px;font-size:26px">${icon("bag")}</div><div class="grow"><b>${esc(m.name)}</b><div class="muted s">${esc(m.cat || "")}</div><div><b>${peso(m.price)}</b> <s class="muted s">${peso(m.old)}</s></div></div>`;
 function msgHTML(m) {
@@ -1630,26 +1711,18 @@ function msgHTML(m) {
   return `<div class="msg ${m.from}">${body}<small>${m.t}</small></div>`;
 }
 function renderChat() {
-  $("#cName").textContent = chatKey;
-  $("#cAv").textContent = chatKey.slice(0, 2).toUpperCase();
+  const peer = peerNames[chatKey] || "Student";
+  $("#cName").textContent = peer;
+  $("#cAv").textContent = peer.slice(0, 2).toUpperCase();
   const l = chats[chatKey] || [];
-  $("#cMsgs").innerHTML = l.length ? l.map(msgHTML).join("") : `<div class="empty">Say hi to ${esc(chatKey)}!</div>`;
+  $("#cMsgs").innerHTML = l.length ? l.map(msgHTML).join("") : `<div class="empty">Say hi to ${esc(peer)}!</div>`;
   $("#cPending").classList.toggle("hidden", !pending);
   if (pending)
     $("#cPending").innerHTML = `<button class="px" data-pclose aria-label="Remove">✕</button>${prodCard(pending)}<button class="send" id="cSendP">Send</button>`;
   window.scrollTo(0, document.body.scrollHeight);
 }
-function autoReply(key) {
-  const n = (chats[key] || []).filter(m => m.from === "them").length;
-  setTimeout(() => {
-    const reply = n ? "Sure! We can meet at school during break time." : "Hi! Thanks for messaging. Yes, it's still available.";
-    pushMsg({ from: "them", type: "text", text: reply }, key);
-    if (curView === "chat" && chatKey === key)
-      renderChat();
-    else
-      notify("message", "New Message", `${key}: ${reply}`, { chat: key });
-  }, 1200);
-}
+// Replies now come from the real person on the other end (see subscribeChats).
+function autoReply() {}
 function sendText() {
   const t = $("#cText"), v = t.value.trim();
   if (!v)
@@ -1738,7 +1811,7 @@ function renderChatList() {
   const keys = Object.keys(chats).filter(k => chats[k].length);
   $("#chatList").innerHTML = keys.length ? keys.map(k => {
     const m = chats[k][chats[k].length - 1], pv = m.type === "text" ? m.text : m.type === "image" ? "Photo" : m.type === "order" ? "Order" : m.name;
-    return `<button class="conv" data-chat="${esc(k)}"><div class="av2">${esc(k.slice(0, 2).toUpperCase())}</div><div class="grow"><b>${esc(k)}</b><div class="muted s">${m.from === "me" ? "You: " : ""}${esc(pv)}</div></div><span class="muted s">${m.t}</span></button>`;
+    return `<button class="conv" data-chat="${esc(k)}"><div class="av2">${esc((peerNames[k] || "ST").slice(0, 2).toUpperCase())}</div><div class="grow"><b>${esc(peerNames[k] || "Student")}</b><div class="muted s">${m.from === "me" ? "You: " : ""}${esc(pv)}</div></div><span class="muted s">${m.t}</span></button>`;
   }).join("") : `<div class="empty">No messages yet.<br>Tap a product to chat with the seller.</div>`;
 }
 $("#messages").addEventListener("click", e => {
