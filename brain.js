@@ -40,6 +40,8 @@ async function startSession(uid) {
   accounts = data ? [toAcct(data)] : [];
   await loadProducts();
   await loadChats();
+  await loadOrders();
+  subscribeOrders();
 }
 async function loadProducts() {
   const { data, error } = await db.from("products").select("*").order("created_at", { ascending: false });
@@ -191,6 +193,9 @@ const SCAN_MSG = {
 const FAIL_STEP = {
   "not-school": 1, unclear: 1, "wrong-year": 1, incomplete: 2
 };
+// Checks the LRN against the "students" table in Supabase (see students_setup.sql).
+// Returns the student {name, grade, strand}, null if the LRN is not on the list,
+// or undefined if the check is off (empty table) or couldn't run.
 const lookupStudent = async lrn => {
   try {
     const { data, error } = await db.rpc("student_check", { p_lrn: String(lrn) });
@@ -899,13 +904,18 @@ const doLogout = async () => {
     db.removeChannel(msgChannel);
     msgChannel = null;
   }
+  if (orderChannel) {
+    db.removeChannel(orderChannel);
+    orderChannel = null;
+  }
+  orders = [];
   chats = {};
   peerNames = {};
   toast("Logged out.");
   go("auth");
 };
 let cur = null, curView = "", lastMain = "home", dtab = "overview", rate = 0, writing = false, fbDraft = "";
-let orders = load("cc_orders", []), reviews = load("cc_reviews", {}), helped = {};
+let orders = [], orderMode = "buying", orderChannel = null, reviews = load("cc_reviews", {}), helped = {};
 const peso = n => "₱" + Number(n).toLocaleString("en-PH");
 const oldPrice = p => p.old || Math.round(p.price / 0.8);
 const findP = id => allProducts().find(p => p.id === id);
@@ -1021,7 +1031,7 @@ $("#detail").addEventListener("click", e => {
     const u = accounts.find(a => a.id === session), parts = (u ? u.name : "Student").split(" ");
     const name = parts[0] + (parts[1] ? " " + parts[parts.length - 1][0] + "." : "");
     (reviews[cur.p.id] = reviews[cur.p.id] || []).unshift({
-      name, stars: rate, when: "Just now", text: fbDraft.trim(), helpful: 0, verified: orders.some(o => o.pid === cur.p.id)
+      name, stars: rate, when: "Just now", text: fbDraft.trim(), helpful: 0, verified: orders.some(o => o.buyerId === session && String(o.pid) === String(cur.p.id) && statusOf(o) === "Completed")
     });
     save("cc_reviews", reviews);
     writing = false;
@@ -1093,7 +1103,7 @@ function saveAddr() {
     renderBuy();
   toast("Address saved.");
 }
-$("#buy").addEventListener("click", e => {
+$("#buy").addEventListener("click", async e => {
   const q = s => e.target.closest(s);
   let el;
   const p = cur.p;
@@ -1108,13 +1118,30 @@ $("#buy").addEventListener("click", e => {
       toast("Please add your contact number first.");
       return openAddr();
     }
-    orders.unshift({
-      id: Date.now(), pid: p.id, name: p.name, bg: (colorOf(p) || {}).c || p.bg || "#dbe9ff", color: cur.color, size: cur.size, qty: cur.qty, total: p.price * cur.qty + SHIPPING_FEE, date: new Date().toLocaleDateString("en-PH"),
-      status: "Pending", seller: p.seller || "Student Seller", addr: getAddr()
-    });
-    save("cc_orders", orders);
-    notify("order", "Order Update", `Your order #${refOf(orders[0])} has been placed and is now Pending.`, { order: orders[0].id });
+    if (!p.owner)
+      return toast("This seller can't receive orders yet.");
+    if (p.owner === session)
+      return toast("You can't order your own product.");
+    const btn = q("#cBuy");
+    btn.disabled = true;
+    const sub = p.price * cur.qty;
+    const { data: row, error } = await db.from("orders").insert({
+      seller: p.owner, buyer_name: me().name, seller_name: p.seller || "Student Seller",
+      product_id: String(p.id), name: p.name, bg: (colorOf(p) || {}).c || p.bg || "#dbe9ff",
+      color: cur.color || "", size: cur.size || "", qty: cur.qty,
+      subtotal: sub, shipping_fee: SHIPPING_FEE, total: sub + SHIPPING_FEE, addr: getAddr()
+    }).select().single();
+    btn.disabled = false;
+    if (error) {
+      console.error("[order] insert failed", error);
+      return toast("Couldn't place the order: " + (error.message || error.code));
+    }
+    await loadOrders();
+    const o = findOrder(row.id);
+    if (o)
+      notify("order", "Order Update", `Your order #${refOf(o)} has been placed. The seller has ${ORDER_RESPOND_HOURS} hours to respond.`, { order: o.id });
     toast("Order placed! Pay when you receive your item.");
+    orderMode = "buying";
     return go("orders");
   }
   else
@@ -1123,16 +1150,103 @@ $("#buy").addEventListener("click", e => {
 });
 const SHIPPING_FEE = 50;
 const ORDER_FILTERS = ["All", "Pending", "Processing", "Completed", "Cancelled"];
+// Time limits (the same numbers live in orders_setup.sql).
+const ORDER_RESPOND_HOURS = 24, ORDER_CONFIRM_DAYS = 3;
+
+// A Supabase row -> the shape the order screens already use.
+function toOrder(r) {
+  const buyer = r.buyer === session, other = buyer ? r.seller : r.buyer;
+  peerNames[other] = peerNames[other] || (buyer ? r.seller_name : r.buyer_name) || "Student";
+  return {
+    id: r.id, pid: r.product_id, name: r.name, bg: r.bg || "#dbe9ff", color: r.color, size: r.size, qty: r.qty,
+    total: +r.total, shipping: +r.shipping_fee, status: r.status, reason: r.cancel_reason || "",
+    created: +new Date(r.created_at), date: new Date(r.created_at).toLocaleDateString("en-PH"),
+    seller: r.seller_name, sellerId: r.seller, buyerId: r.buyer, buyerName: r.buyer_name,
+    addr: r.addr || {}, expiresAt: r.expires_at ? +new Date(r.expires_at) : 0,
+    confirmBy: r.confirm_by ? +new Date(r.confirm_by) : 0, actor: r.last_actor
+  };
+}
+async function loadOrders() {
+  if (!session)
+    return;
+  await db.rpc("expire_orders");
+  const { data, error } = await db.from("orders").select("*").order("created_at", { ascending: false });
+  if (error)
+    return void console.warn("[orders] load failed", error.message);
+  orders = data.map(toOrder);
+  updateCartBadge();
+  if (curView === "orders")
+    $("#ordersList").innerHTML = ordersHTML();
+  else if (curView === "profile" && ptab === "orders")
+    renderTab();
+  else if (curView === "orderdetail")
+    renderOrder();
+}
+function subscribeOrders() {
+  if (orderChannel)
+    db.removeChannel(orderChannel);
+  orderChannel = db.channel("orders-" + session).on("postgres_changes", { event: "*", schema: "public", table: "orders" }, async ({ eventType, new: r }) => {
+    await loadOrders();
+    if (!r || !r.id || r.last_actor === session)
+      return;
+    const o = findOrder(r.id);
+    if (!o)
+      return;
+    const ref = refOf(o), asBuyer = o.buyerId === session;
+    if (eventType === "INSERT" && !asBuyer)
+      notify("order", "New Order", `${o.buyerName} ordered ${o.name}. Please respond within ${ORDER_RESPOND_HOURS} hours.`, { order: o.id });
+    else if (eventType === "UPDATE")
+      notify("order", "Order Update", asBuyer
+        ? `Your order #${ref} is now ${o.status}.${o.reason ? " " + o.reason + "." : ""}`
+        : `Order #${ref} is now ${o.status}.${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
+  }).subscribe();
+}
+const leftLabel = ms => {
+  const m = Math.max(0, Math.round(ms / 60000)), d = Math.floor(m / 1440), h = Math.floor((m % 1440) / 60);
+  return d ? `${d}d ${h}h` : h ? `${h}h ${m % 60}m` : `${m}m`;
+};
+const deadlineLine = o => statusOf(o) === "Pending" ? `Seller must respond in ${leftLabel(o.expiresAt - Date.now())}`
+  : statusOf(o) === "Processing" ? `Auto-completes in ${leftLabel(o.confirmBy - Date.now())} unless confirmed` : "";
+async function orderAction(action) {
+  const o = findOrder(curOrderId);
+  if (!o)
+    return;
+  closeSheet();
+  const { error } = await db.rpc("order_action", { p_order: o.id, p_action: action });
+  if (error) {
+    console.warn("[order] action failed", error);
+    toast(error.message || "That action isn't available right now.");
+    await loadOrders();
+    return;
+  }
+  await loadOrders();
+  const ref = refOf(o), buyer = o.buyerId === session, other = buyer ? o.sellerId : o.buyerId;
+  const text = {
+    accept: `I accepted your order #${ref}. I'll prepare it now.`,
+    decline: `Sorry, I can't fulfill order #${ref}.`,
+    cancel: `I cancelled order #${ref}.`,
+    complete: buyer ? `I received order #${ref}. Thank you!` : `Order #${ref} is complete. Thanks for buying!`
+  }[action];
+  pushMsg({ from: "me", type: "text", text }, other);
+  toast({ accept: "Order accepted.", decline: "Order declined.", cancel: "Order cancelled.", complete: "Order marked as completed." }[action]);
+}
+const askSheet = (title, text, yes, act) => openSheet(`
+  <h2 class="sh">${title}</h2>
+  <p class="muted s">${text}</p>
+  <div class="dlgbtns">
+    <button class="btn outline" data-close>Go Back</button>
+    <button class="btn primary" data-oact="${act}">${yes}</button>
+  </div>`, true);
 let orderFilter = "All", curOrderId = null, orderFrom = "orders";
 
 const statusOf = o => o.status || "Pending";
-const refOf = o => "CC" + new Date(o.id).getFullYear() + "-" + String(o.id % 10000).padStart(4, "0");
+const refOf = o => "CC" + new Date(o.created).getFullYear() + "-" + String(o.id).padStart(4, "0");
 const itemsLabel = o => o.qty + (o.qty === 1 ? " item" : " items");
 const sellerOf = o => o.seller || (findP(o.pid) || {}).seller || "Student Seller";
 const statusPill = o => `<span class="ostatus ${statusOf(o).toLowerCase()}">${statusOf(o)}</span>`;
 const findOrder = id => orders.find(o => o.id === id);
 function updateCartBadge() {
-  const active = orders.filter(o => statusOf(o) !== "Cancelled").length;
+  const active = orders.filter(o => (o.buyerId === session || o.sellerId === session) && ["Pending", "Processing"].includes(statusOf(o))).length;
   $$(".cartBadge").forEach(b => {
     b.textContent = active;
     b.classList.toggle("hidden", !active);
@@ -1145,18 +1259,25 @@ const orderCard = o => `
     <div class="grow">
       <b>Order #${refOf(o)}</b>
       <div class="muted s">${esc(o.name)}</div>
+      <div class="muted s">${o.sellerId === session ? "Buyer: " + esc(o.buyerName) : "Seller: " + esc(o.seller)}</div>
       <div class="muted s">${o.date} · ${itemsLabel(o)}</div>
+      ${deadlineLine(o) ? `<div class="muted s">⏳ ${deadlineLine(o)}</div>` : ""}
     </div>
     ${statusPill(o)}
     <span class="chev">›</span>
   </button>`;
 
 function ordersHTML() {
-  if (!orders.length)
-    return `<div class="empty">No orders yet.</div>`;
+  const selling = orderMode === "selling" && isSeller();
+  const mine = orders.filter(o => selling ? o.sellerId === session : o.buyerId === session);
+  const modes = isSeller() ? `<div class="ofilter">
+    <button data-omode="buying" class="${selling ? "" : "on"}">My Orders</button>
+    <button data-omode="selling" class="${selling ? "on" : ""}">Orders to Fulfill</button></div>` : "";
+  if (!mine.length)
+    return modes + `<div class="empty">${selling ? "No customer orders yet." : "No orders yet."}</div>`;
   const tabs = ORDER_FILTERS.map(f => `<button data-ofilter="${f}" class="${f === orderFilter ? "on" : ""}">${f}</button>`).join("");
-  const list = orders.filter(o => orderFilter === "All" || statusOf(o) === orderFilter);
-  return `<div class="ofilter">${tabs}</div>` +
+  const list = mine.filter(o => orderFilter === "All" || statusOf(o) === orderFilter);
+  return modes + `<div class="ofilter">${tabs}</div>` +
     (list.map(orderCard).join("") || `<div class="empty">No ${orderFilter.toLowerCase()} orders.</div>`);
 }
 
@@ -1164,14 +1285,31 @@ function renderOrder() {
   const o = findOrder(curOrderId);
   if (!o)
     return go("profile");
-  const sub = o.total - SHIPPING_FEE, a = o.addr || getAddr(), cancelled = statusOf(o) === "Cancelled";
+  const ship = o.shipping != null ? o.shipping : SHIPPING_FEE, sub = o.total - ship, a = o.addr || {};
+  const st = statusOf(o), buyer = o.buyerId === session;
+  const chat = `<button class="btn outline" id="odChat">${buyer ? "Chat Seller" : "Chat Buyer"}</button>`;
+  let actions = "";
+  if (st === "Pending")
+    actions = buyer ? chat + `<button class="btn danger" id="odCancel">Cancel Order</button>`
+      : `<button class="btn primary" id="odAccept">Accept Order</button><button class="btn danger" id="odDecline">Decline</button>` + chat;
+  else if (st === "Processing")
+    actions = chat + `<button class="btn primary" id="odDone">${buyer ? "I Received It" : "Mark as Completed"}</button>`;
+  else
+    actions = chat;
+  const note = st === "Cancelled" ? `<div class="card odcancelled"><b>Order Cancelled</b><p class="muted s">${esc(o.reason || "This order has been cancelled.")} No further action is needed.</p></div>`
+    : st === "Completed" ? `<div class="card"><b>Order Completed</b><p class="muted s">This order is done. Thank you for using CampusConnect!</p></div>`
+    : `<div class="card"><b>${st === "Pending" ? (buyer ? "Waiting for the seller" : "Needs your response") : "Being prepared"}</b><p class="muted s">${st === "Pending"
+        ? (buyer ? "The seller has " + ORDER_RESPOND_HOURS + " hours to accept your order. If they don't, it is cancelled automatically."
+          : "Please accept or decline within " + ORDER_RESPOND_HOURS + " hours, or the order is cancelled automatically.")
+        : "Meet up or deliver, then mark it completed. If nobody confirms within " + ORDER_CONFIRM_DAYS + " days, it completes automatically."}</p>
+      ${deadlineLine(o) ? `<p class="muted s">⏳ ${deadlineLine(o)}</p>` : ""}</div>`;
   $("#odBody").innerHTML = `
     <div class="row between">
       <h2 class="bt">Order Details</h2>
       <button class="odref" id="odCopy" aria-label="Copy order number">#${refOf(o)} ${icon("copy")}</button>
     </div>
     <div>${statusPill(o)}</div>
-    <p class="muted s">Ordered on ${o.date} · ${itemsLabel(o)}</p>
+    <p class="muted s">Ordered on ${o.date} · ${itemsLabel(o)} · ${buyer ? "Seller: " + esc(o.seller) : "Buyer: " + esc(o.buyerName)}</p>
     <div class="dpanel row">
       <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
       <div class="grow">
@@ -1183,28 +1321,23 @@ function renderOrder() {
     </div>
     <div class="odsum">
       <div class="row between"><span>Subtotal</span><b>${peso(sub)}</b></div>
-      <div class="row between"><span>Shipping Fee</span><b>${peso(SHIPPING_FEE)}</b></div>
+      <div class="row between"><span>Shipping Fee</span><b>${peso(ship)}</b></div>
       <div class="row between odtotal"><span>Total</span><b>${peso(o.total)}</b></div>
     </div>
-    ${cancelled ? `
-    <div class="card odcancelled">
-      <b>Order Cancelled</b>
-      <p class="muted s">This order has been cancelled. No further action is needed.</p>
-    </div>` : `
-    <div class="odactions">
-      <button class="btn outline" id="odChat">Chat Seller</button>
-      ${statusOf(o) === "Pending" ? `<button class="btn danger" id="odCancel">Cancel Order</button>` : ""}
-    </div>`}
+    ${note}
+    <div class="odactions">${actions}</div>
     <div class="card odaddr">
-      <b>Shipping Address</b>
-      <div>${esc(a.name)}</div>
-      <div class="muted s">${esc(a.phone)}</div>
-      <div class="muted s">${esc(a.line)}</div>
+      <b>${buyer ? "Shipping Address" : "Deliver or meet the buyer"}</b>
+      <div>${esc(a.name || "")}</div>
+      <div class="muted s">${esc(a.phone || "")}</div>
+      <div class="muted s">${esc(a.line || "")}</div>
     </div>`;
 }
 function showOrder(id) {
   if (curView === "profile" || curView === "orders")
     orderFrom = curView;
+  const target = findOrder(id);
+  orderMode = target && target.sellerId === session ? "selling" : "buying";
   curOrderId = id;
   go("orderdetail");
   renderOrder();
@@ -1219,18 +1352,16 @@ function confirmCancelHTML(o) {
       <button class="btn danger solid" data-oact="cancel-yes">Yes, Cancel Order</button>
     </div>`;
 }
-function cancelOrder() {
+async function cancelOrder() {
   const o = findOrder(curOrderId);
   if (!o || statusOf(o) !== "Pending")
     return closeSheet();
-  o.status = "Cancelled";
-  save("cc_orders", orders);
-  pushMsg({ from: "me", type: "text", text: `I cancelled order #${refOf(o)}.` }, sellerOf(o));
-  notify("order", "Order Update", `Your order #${refOf(o)} has been cancelled.`, { order: o.id });
-  renderOrder();
-  openSheet(`
+  await orderAction("cancel");
+  const now = findOrder(curOrderId);
+  if (now && statusOf(now) === "Cancelled")
+    openSheet(`
     <h2 class="sh">Order Cancelled</h2>
-    <p class="muted s">Your order #${refOf(o)} has been successfully cancelled.</p>
+    <p class="muted s">Your order #${refOf(now)} has been successfully cancelled.</p>
     <div class="dlgbtns">
       <button class="btn primary" data-oact="back-orders">Back to Orders</button>
     </div>`, true);
@@ -1243,8 +1374,15 @@ const backToOrders = () => {
 };
 
 function onOrdersClick(e) {
-  const f = e.target.closest("[data-ofilter]"), c = e.target.closest("[data-order]");
-  if (f) {
+  const f = e.target.closest("[data-ofilter]"), c = e.target.closest("[data-order]"), m = e.target.closest("[data-omode]");
+  if (m) {
+    orderMode = m.dataset.omode;
+    orderFilter = "All";
+    $("#ordersList").innerHTML = ordersHTML();
+    if (curView === "profile")
+      renderTab();
+  }
+  else if (f) {
     orderFilter = f.dataset.ofilter;
     $("#ordersList").innerHTML = ordersHTML();
     if (curView === "profile")
@@ -1259,10 +1397,18 @@ $("#oBack").onclick = () => go(lastMain || "home");
 $("#odBack").onclick = backToOrders;
 $("#odBody").addEventListener("click", e => {
   const o = findOrder(curOrderId);
+  if (!o)
+    return;
   if (e.target.closest("#odCancel"))
     openSheet(confirmCancelHTML(o), true);
+  else if (e.target.closest("#odAccept"))
+    orderAction("accept");
+  else if (e.target.closest("#odDecline"))
+    askSheet("Decline this order?", "The buyer will be told that you can't fulfill this order.", "Yes, Decline", "decline-yes");
+  else if (e.target.closest("#odDone"))
+    askSheet(o.buyerId === session ? "Did you receive your item?" : "Mark as completed?", o.buyerId === session ? "Only confirm after you have received the item and paid." : "Only confirm after the buyer has received the item.", "Yes, Confirm", "done-yes");
   else if (e.target.closest("#odChat"))
-    openChat(sellerOf(o), null, "orderdetail");
+    openChat(o.buyerId === session ? o.sellerId : o.buyerId, null, "orderdetail");
   else if (e.target.closest("#odCopy"))
     navigator.clipboard.writeText(refOf(o))
       .then(() => toast("Order number copied."))
@@ -1274,6 +1420,10 @@ $("#sheetBody").addEventListener("click", e => {
     return;
   if (b.dataset.oact === "cancel-yes")
     cancelOrder();
+  else if (b.dataset.oact === "decline-yes")
+    orderAction("decline");
+  else if (b.dataset.oact === "done-yes")
+    orderAction("complete");
   else if (b.dataset.oact === "back-orders")
     backToOrders();
 });
@@ -1448,7 +1598,7 @@ function notifDetailHTML(n) {
         <div class="grow">
           <b>${esc(o.name)}</b>
           <div class="muted s">${[o.color, o.size].filter(Boolean).map(esc).join(" · ")}</div>
-          <div class="muted s">${peso((o.total - SHIPPING_FEE) / o.qty)} · Qty: ${o.qty}</div>
+          <div class="muted s">${peso((o.total - (o.shipping != null ? o.shipping : SHIPPING_FEE)) / o.qty)} · Qty: ${o.qty}</div>
         </div>
       </div>
       <button class="btn outline" id="ndOrder">View Order</button>`;
@@ -1616,6 +1766,8 @@ const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", min
 const snap = p => ({
   pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: p.bg || "#dbe9ff", cat: p.cat
 });
+// Chats are stored in Supabase (table "messages"). A conversation is keyed by the
+// other person's user id; peerNames maps that id to a display name.
 const peerIdByName = name => {
   if (peerNames[name])
     return name;
@@ -1716,6 +1868,7 @@ function renderChat() {
     $("#cPending").innerHTML = `<button class="px" data-pclose aria-label="Remove">✕</button>${prodCard(pending)}<button class="send" id="cSendP">Send</button>`;
   window.scrollTo(0, document.body.scrollHeight);
 }
+// Replies now come from the real person on the other end (see subscribeChats).
 function autoReply() {}
 function sendText() {
   const t = $("#cText"), v = t.value.trim();
