@@ -647,8 +647,10 @@ $("#sellForm").addEventListener("submit", async e => {
   const { error } = await db.from("products").insert({
     seller_name: me().name, name: n.value.trim(), price: Math.round(+p.value), cat: c.value, descr: $("#pDesc").value.trim(), photo_url
   });
-  if (error)
-    return toast("Couldn't post the product.");
+  if (error) {
+    console.error("[product] insert failed", error);
+    return toast("Couldn't post the product: " + (error.message || error.code || "unknown error"));
+  }
   await loadProducts();
   e.target.reset();
   photoData = "";
