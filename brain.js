@@ -42,6 +42,8 @@ async function startSession(uid) {
   await loadChats();
   await loadOrders();
   subscribeOrders();
+  await loadReviews();
+  subscribeReviews();
 }
 async function loadProducts() {
   const { data, error } = await db.from("products").select("*").order("created_at", { ascending: false });
@@ -914,6 +916,11 @@ const doLogout = async () => {
     db.removeChannel(orderChannel);
     orderChannel = null;
   }
+  if (reviewChannel) {
+    db.removeChannel(reviewChannel);
+    reviewChannel = null;
+  }
+  reviews = {};
   orders = [];
   chats = {};
   peerNames = {};
@@ -921,27 +928,51 @@ const doLogout = async () => {
   go("auth");
 };
 let cur = null, curView = "", lastMain = "home", dtab = "overview", rate = 0, writing = false, fbDraft = "";
-let orders = [], orderMode = "buying", orderChannel = null, reviews = load("cc_reviews", {}), helped = {};
+let orders = [], orderMode = "buying", orderChannel = null, reviews = {}, helped = {};
 const peso = n => "₱" + Number(n).toLocaleString("en-PH");
-const oldPrice = p => p.old || Math.round(p.price / 0.8);
 const findP = id => allProducts().find(p => p.id === id);
 const isMine = id => myItems.some(p => p.id === id && p.owner === session);
 const BASE = {
-  5: 84, 4: 12, 3: 3, 2: 1, 1: 0
+  5: 0, 4: 0, 3: 0, 2: 0, 1: 0
 };
 const revsOf = id => reviews[id] || [];
+let reviewChannel = null;
+// Reviews live in Supabase (table "reviews"), so every student sees the same count and average.
+async function loadReviews() {
+  const { data, error } = await db.from("reviews").select("*").order("created_at", { ascending: false });
+  if (error)
+    return void console.warn("[reviews] load failed", error.message);
+  reviews = {};
+  data.forEach(r => {
+    (reviews[r.product_id] = reviews[r.product_id] || []).push({
+      uid: r.user_id, name: r.reviewer_name, stars: r.stars, text: r.text,
+      when: new Date(r.created_at).toLocaleDateString("en-PH"), helpful: 0, verified: !!r.verified
+    });
+  });
+  if (cur && cur.p && !writing) {
+    if (curView === "detail")
+      renderDetail();
+    else if (curView === "buy")
+      renderBuy();
+  }
+}
+function subscribeReviews() {
+  if (reviewChannel)
+    db.removeChannel(reviewChannel);
+  reviewChannel = db.channel("reviews-" + session).on("postgres_changes", { event: "*", schema: "public", table: "reviews" }, () => loadReviews()).subscribe();
+}
 const stars = n => "★".repeat(n) + "☆".repeat(5 - n);
 function stats(id) {
   const c = { ...BASE };
   (reviews[id] || []).forEach(r => c[r.stars]++);
   const n = Object.values(c).reduce((a, b) => a + b, 0);
-  const avg = Object.entries(c).reduce((a, [s, k]) => a + s * k, 0) / n;
+  const avg = n ? Object.entries(c).reduce((a, [s, k]) => a + s * k, 0) / n : 0;
   return { c, n, avg: avg.toFixed(1) };
 }
 const colorOf = p => (p.colors && p.colors.find(c => c.n === cur.color)) || null;
 const colorChips = p => !p.colors ? "" : `<div class="lbl">Color: <span>${cur.color}</span></div><div class="sw">${p.colors.map(c => `<button class="swatch ${c.n === cur.color ? "on" : ""}" data-color="${c.n}" style="background:${c.c}" aria-label="${c.n}"></button>`).join("")}</div>`;
 const sizePills = p => !p.sizes ? "" : `<div class="lbl">Size: <span>${cur.size}</span></div><div class="pills">${p.sizes.map(s => `<button class="pill ${s === cur.size ? "on" : ""}" data-size="${s}">${s}</button>`).join("")}</div>`;
-const priceRow = p => `<div class="pricerow"><b class="big">${peso(p.price)}</b><s>${peso(oldPrice(p))}</s><span class="save">Save ${peso(oldPrice(p) - p.price)}</span></div>`;
+const priceRow = p => `<div class="pricerow"><b class="big">${peso(p.price)}</b></div>`;
 function openDetail(id) {
   const p = findP(id);
   if (!p)
@@ -969,7 +1000,7 @@ function renderDetail() {
   if (dtab === "overview") {
     const hero = p.photo ? `<div class="hero img" style="background-image:url(${p.photo})"></div>`
       : `<div class="hero" style="background:${col ? col.c : (bgOf(p))}">${icon("bag")}</div>`;
-    h = hero + `<div class="deal"><span>Student Deal</span><b>20% OFF</b></div>
+    h = hero + `
   <div class="dpanel">${priceRow(p)}<h2 class="pname">${esc(p.name)}</h2>
   <div class="rate"><span class="stars">★</span> <b>${st.avg}</b> <span class="muted">(${st.n} feedback)</span></div>${colorChips(p)}${sizePills(p)}</div>`;
   }
@@ -978,7 +1009,7 @@ function renderDetail() {
   }
   else {
     const bars = [5, 4, 3, 2, 1].map(s => {
-      const pc = Math.round(st.c[s] / st.n * 100);
+      const pc = st.n ? Math.round(st.c[s] / st.n * 100) : 0;
       return `<div class="bar"><span>${s} ★</span><i><u style="width:${pc}%"></u></i><span>${pc}%</span></div>`;
     }).join("");
     const form = writing ? `<div class="dpanel wf"><b>Your rating</b><div class="rstars">${[1, 2, 3, 4, 5].map(n => `<button class="rs ${n <= rate ? "on" : ""}" data-rate="${n}" aria-label="${n} stars">★</button>`).join("")}</div><textarea id="fbText" rows="3" placeholder="Share your experience...">${esc(fbDraft)}</textarea><button class="btn primary" id="fbSend">Submit feedback</button></div>` : "";
@@ -994,7 +1025,7 @@ function renderDetail() {
     : `<button class="aico ${fav ? "on" : ""}" id="aFav"><span>${fav ? "♥" : "♡"}</span>Favorite</button><button class="aico" id="aChat"><span>${icon("chat")}</span>Chat</button><button class="btn primary" id="aBuy">Buy Now</button>`;
 }
 $("#dBack").onclick = () => go(lastMain);
-$("#detail").addEventListener("click", e => {
+$("#detail").addEventListener("click", async e => {
   const q = s => e.target.closest(s);
   let el;
   const ta = $("#fbText");
@@ -1034,14 +1065,24 @@ $("#detail").addEventListener("click", e => {
       return toast("Tap a star to rate.");
     if (fbDraft.trim().length < 3)
       return toast("Please write a short feedback.");
+    if (cur.p.owner === session)
+      return toast("You can't review your own product.");
     const u = accounts.find(a => a.id === session), parts = (u ? u.name : "Student").split(" ");
     const name = parts[0] + (parts[1] ? " " + parts[parts.length - 1][0] + "." : "");
-    (reviews[cur.p.id] = reviews[cur.p.id] || []).unshift({
-      name, stars: rate, when: "Just now", text: fbDraft.trim(), helpful: 0, verified: orders.some(o => o.buyerId === session && String(o.pid) === String(cur.p.id) && statusOf(o) === "Completed")
-    });
-    save("cc_reviews", reviews);
+    const btn = q("#fbSend");
+    btn.disabled = true;
+    const { error } = await db.from("reviews").upsert(
+      { product_id: String(cur.p.id), user_id: session, reviewer_name: name, stars: rate, text: fbDraft.trim() },
+      { onConflict: "product_id,user_id" }
+    );
+    btn.disabled = false;
+    if (error) {
+      console.error("[review] insert failed", error);
+      return toast("Couldn't send feedback: " + (error.message || error.code));
+    }
     writing = false;
     fbDraft = "";
+    await loadReviews();
     toast("Thanks for your feedback!");
   }
   else if ((el = q("[data-help]")))
@@ -1781,7 +1822,7 @@ $("#editForm").addEventListener("submit", e => {
 let chats = {}, peerNames = {}, chatKey = "", pending = null, chatFrom = "messages", msgChannel = null;
 const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
 const snap = p => ({
-  pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: bgOf(p), cat: p.cat
+  pid: p.id, name: p.name, price: p.price, bg: bgOf(p), cat: p.cat
 });
 // Chats are stored in Supabase (table "messages"). A conversation is keyed by the
 // other person's user id; peerNames maps that id to a display name.
@@ -1869,7 +1910,7 @@ function subscribeChats() {
     }
   }).subscribe();
 }
-const prodCard = m => `<div class="mini" style="background:${m.bg};width:52px;height:52px;font-size:26px">${icon("bag")}</div><div class="grow"><b>${esc(m.name)}</b><div class="muted s">${esc(m.cat || "")}</div><div><b>${peso(m.price)}</b> <s class="muted s">${peso(m.old)}</s></div></div>`;
+const prodCard = m => `<div class="mini" style="background:${m.bg};width:52px;height:52px;font-size:26px">${icon("bag")}</div><div class="grow"><b>${esc(m.name)}</b><div class="muted s">${esc(m.cat || "")}</div><div><b>${peso(m.price)}</b></div></div>`;
 function msgHTML(m) {
   const body = m.type === "image" ? `<img src="${m.img}" alt="Photo">` : m.type === "product" ? `<div class="mcard">${prodCard(m)}</div>` : m.type === "order" ? `<b>Order</b><br>${esc(m.name)} · ${peso(m.total)}` : esc(m.text);
   return `<div class="msg ${m.from}">${body}<small>${m.t}</small></div>`;
