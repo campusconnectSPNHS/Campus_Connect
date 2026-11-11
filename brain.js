@@ -1998,7 +1998,7 @@ setInterval(() => {
 }, 60000);
 
 function syncOrderNotifs() {
-  const map = load("cc_order_seen", {});
+  const map = load("cc_order_seen_" + session, {});
   orders.forEach(o => {
     const st = statusOf(o), asBuyer = o.buyerId === session, known = o.id in map;
     if (!asBuyer && !known && st === "Pending") {
@@ -2009,5 +2009,5 @@ function syncOrderNotifs() {
       notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
     map[o.id] = st;
   });
-  save("cc_order_seen", map);
+  save("cc_order_seen_" + session, map);
 }
