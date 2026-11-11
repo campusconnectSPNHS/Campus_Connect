@@ -331,9 +331,9 @@ h2 {
 }
 
 .chip.on {
-  background: var(--blue);
+  background: var(--cat, var(--blue));
   color: #fff;
-  border-color: var(--blue);
+  border-color: var(--cat, var(--blue));
 }
 
 .grid {
@@ -2679,3 +2679,28 @@ label.btn {
   vertical-align: middle;
   color: var(--blue);
 }
+/* Category colors */
+[data-cat="School Supplies"] { --cat: #e5484d; --cat-bg: #ffe5e6; }
+[data-cat="Food"] { --cat: #e07a00; --cat-bg: #fff1dc; }
+[data-cat="Accessories"] { --cat: #8a3ffc; --cat-bg: #f3e8ff; }
+.chip[data-cat]:not(.on) { color: var(--cat); border-color: var(--cat-bg); background: var(--cat-bg); }
+.thumb[data-cat] { color: var(--cat); }
+.ctag { display: inline-block; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 10px; margin-bottom: 4px; color: var(--cat, var(--blue)); background: var(--cat-bg, #e6efff); }
+
+/* Order tracker and countdown */
+.stepper { display: flex; margin: 12px 0; }
+.step { flex: 1; text-align: center; font-size: 12px; color: #8a93a6; position: relative; }
+.step i { display: block; width: 14px; height: 14px; border-radius: 50%; background: #d5dae5; margin: 0 auto 4px; position: relative; z-index: 1; }
+.step::before { content: ""; position: absolute; top: 6px; left: -50%; width: 100%; height: 2px; background: #d5dae5; }
+.step:first-child::before { display: none; }
+.step.done i, .step.now i { background: var(--blue); }
+.step.done::before, .step.now::before { background: var(--blue); }
+.step.now { color: var(--blue); font-weight: 700; }
+.dbar { height: 5px; border-radius: 3px; background: #e6eaf2; margin-top: 6px; overflow: hidden; }
+.dbar i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+.dbar.urgent i { background: #e5484d; }
+
+/* Role link in notifications */
+.rolelink { display: flex; align-items: center; gap: 10px; width: 100%; margin: 10px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: #f3f7ff; color: var(--blue); font-size: 13px; text-align: left; cursor: pointer; }
+.rolelink span:nth-child(2) { flex: 1; }
+.rolelink .i { width: 20px; height: 20px; }

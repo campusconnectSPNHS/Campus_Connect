@@ -583,7 +583,7 @@ function card(p, mine) {
   <div class="seller">${mine ? `${p.sold || 0} sold &nbsp; ♡ ${p.likes || 0}` : `<span class="av">${initial(p.seller || "Student Seller")}</span>${esc(p.seller || "Student Seller")}`}</div></div></article>`;
 }
 const CATS = {
-  "School Supplies": { bg: "#e6efff" },
+  "School Supplies": { bg: "#ffe5e6" },
   Food: { bg: "#fff1dc" },
   Accessories: { bg: "#f3e8ff" }
 };
@@ -1783,6 +1783,8 @@ const hhmm = () => new Date().toLocaleTimeString("en-PH", { hour: "numeric", min
 const snap = p => ({
   pid: p.id, name: p.name, price: p.price, old: oldPrice(p), bg: bgOf(p), cat: p.cat
 });
+// Chats are stored in Supabase (table "messages"). A conversation is keyed by the
+// other person's user id; peerNames maps that id to a display name.
 const peerIdByName = name => {
   if (peerNames[name])
     return name;
