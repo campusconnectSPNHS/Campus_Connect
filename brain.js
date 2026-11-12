@@ -1258,7 +1258,7 @@ function deadlineBar(o) {
   return `<div class="dbar ${pct <= 25 ? "urgent" : ""}"><i style="width:${pct}%"></i></div>`;
 }
 const deadlineLine = o => statusOf(o) === "Pending" ? `Seller must respond in ${leftLabel(o.expiresAt - Date.now())}`
-  : statusOf(o) === "Processing" ? (o.eta ? (o.eta > Date.now() ? `Estimated ready in ${leftLabel(o.eta - Date.now())}` : "Estimated time reached. Check with the seller.")
+  : statusOf(o) === "Processing" ? (o.eta ? (o.eta > Date.now() ? `Expected ${fmtWhen(o.eta)} (${leftLabel(o.eta - Date.now())} left)` : "Expected time has passed. Check with the seller.")
     : `Auto-completes in ${leftLabel(o.confirmBy - Date.now())} unless confirmed`) : "";
 async function orderAction(action, opts = {}) {
   const o = findOrder(curOrderId);
@@ -1267,7 +1267,7 @@ async function orderAction(action, opts = {}) {
   closeSheet();
   const args = { p_order: o.id, p_action: action };
   if (action === "accept") {
-    args.p_eta_minutes = opts.eta || 60;
+    args.p_eta_at = opts.eta;
     args.p_note = opts.note || "";
   }
   const { error } = await db.rpc("order_action", args);
@@ -1280,7 +1280,7 @@ async function orderAction(action, opts = {}) {
   await loadOrders();
   const ref = refOf(o), buyer = o.buyerId === session, other = buyer ? o.sellerId : o.buyerId;
   const text = {
-    accept: `I accepted your order #${ref}. Estimated ${(DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label.toLowerCase()} time: about ${etaText(opts.eta || 60)}.${opts.note ? " " + opts.note : ""}`,
+    accept: `I accepted your order #${ref}. You will receive it (${(DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label.toLowerCase()}) on ${fmtWhen(+new Date(opts.eta))}.${opts.note ? " " + opts.note : ""}`,
     decline: `Sorry, I can't fulfill order #${ref}.`,
     cancel: `I cancelled order #${ref}.`,
     complete: buyer ? `I received order #${ref}. Thank you!` : `Order #${ref} is complete. Thanks for buying!`
@@ -1288,17 +1288,26 @@ async function orderAction(action, opts = {}) {
   pushMsg({ from: "me", type: "text", text }, other);
   toast({ accept: "Order accepted.", decline: "Order declined.", cancel: "Order cancelled.", complete: "Order marked as completed." }[action]);
 }
-const ETA_CHOICES = [15, 30, 60, 120, 1440];
-let etaPick = 30;
-const etaText = m => m >= 1440 ? "1 day" : m >= 60 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes";
+const fmtWhen = ms => new Date(ms).toLocaleString("en-PH", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const toLocalInput = d => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+const ETA_QUICK = [["30 min", 30], ["1 hour", 60], ["2 hours", 120], ["Tomorrow 8 AM", "tomorrow"]];
+const quickTime = v => {
+  if (v !== "tomorrow")
+    return new Date(Date.now() + v * 60000);
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  d.setHours(8, 0, 0, 0);
+  return d;
+};
 function openAcceptSheet(o) {
-  etaPick = 30;
   const way = (DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label;
   openSheet(`
-    <h2 class="sh">When will it be ready?</h2>
-    <p class="muted s">${esc(way)}. Your buyer will see this time and can follow the order until it is completed.</p>
-    <div class="pills" style="margin:12px 0">${ETA_CHOICES.map(m => `<button type="button" class="pill ${m === etaPick ? "on" : ""}" data-eta="${m}">${m === 1440 ? "Tomorrow" : etaText(m)}</button>`).join("")}</div>
+    <h2 class="sh">When will the buyer receive it?</h2>
+    <p class="muted s">${esc(way)}. You must set the day and time before you can accept. The buyer will see it and can follow the order.</p>
+    <div class="pills" style="margin:12px 0">${ETA_QUICK.map(([t, v]) => `<button type="button" class="pill" data-eta="${v}">${t}</button>`).join("")}</div>
+    <div class="field"><input id="etaAt" type="datetime-local" min="${toLocalInput(new Date())}"></div>
     <div class="field"><input id="etaNote" maxlength="120" placeholder="Meetup place or note (optional)"></div>
+    <small class="err" id="etaErr"></small>
     <div class="dlgbtns">
       <button class="btn outline" data-close>Go Back</button>
       <button class="btn primary" data-oact="accept-yes">Accept Order</button>
@@ -1358,9 +1367,10 @@ function ordersHTML() {
 function etaCard(o) {
   if (statusOf(o) !== "Processing" || !o.eta)
     return "";
-  const way = (DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label, at = new Date(o.eta).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
-  return `<div class="card"><b>Estimated ${esc(way.toLowerCase())} time</b>
-    <p class="s">${o.eta > Date.now() ? "Ready in about " + leftLabel(o.eta - Date.now()) + " (around " + at + ")" : "The estimated time has passed. Please chat the " + (o.buyerId === session ? "seller" : "buyer") + "."}</p>
+  const way = (DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label;
+  return `<div class="card"><b>${o.buyerId === session ? "You will receive it on" : "You promised to deliver on"}</b>
+    <p class="s">${esc(fmtWhen(o.eta))}</p>
+    <p class="muted s">${esc(way)} · ${o.eta > Date.now() ? leftLabel(o.eta - Date.now()) + " left" : "The expected time has passed. Please chat the " + (o.buyerId === session ? "seller" : "buyer") + "."}</p>
     ${o.etaNote ? `<p class="muted s">Note: ${esc(o.etaNote)}</p>` : ""}</div>`;
 }
 function renderOrder() {
@@ -1502,15 +1512,23 @@ $("#odBody").addEventListener("click", e => {
 $("#sheetBody").addEventListener("click", e => {
   const pill = e.target.closest("[data-eta]");
   if (pill) {
-    etaPick = +pill.dataset.eta;
+    $("#etaAt").value = toLocalInput(quickTime(pill.dataset.eta === "tomorrow" ? "tomorrow" : +pill.dataset.eta));
     $$("#sheetBody [data-eta]").forEach(x => x.classList.toggle("on", x === pill));
+    $("#etaErr").textContent = "";
     return;
   }
   const b = e.target.closest("[data-oact]");
   if (!b)
     return;
-  if (b.dataset.oact === "accept-yes")
-    orderAction("accept", { eta: etaPick, note: ($("#etaNote") ? $("#etaNote").value.trim().slice(0, 120) : "") });
+  if (b.dataset.oact === "accept-yes") {
+    const v = $("#etaAt").value, t = v ? new Date(v).getTime() : 0;
+    const err = !v ? "Choose when the buyer will receive the order." :
+      t < Date.now() + 60000 ? "Pick a time in the future." :
+      t > Date.now() + 14 * 86400000 ? "Pick a time within the next 14 days." : "";
+    if (err)
+      return void ($("#etaErr").textContent = err);
+    orderAction("accept", { eta: new Date(t).toISOString(), note: $("#etaNote").value.trim().slice(0, 120) });
+  }
   else if (b.dataset.oact === "cancel-yes")
     cancelOrder();
   else if (b.dataset.oact === "decline-yes")
@@ -2116,7 +2134,7 @@ function syncOrderNotifs() {
       toast("You have a new order to process.");
     }
     else if (known && map[o.id] !== st && o.actor !== session)
-      notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${st === "Processing" && o.eta ? " Estimated ready in " + leftLabel(Math.max(0, o.eta - Date.now())) + "." : ""}${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
+      notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${st === "Processing" && o.eta ? " Expected " + fmtWhen(o.eta) + "." : ""}${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
     map[o.id] = st;
   });
   save("cc_order_seen_" + session, map);
