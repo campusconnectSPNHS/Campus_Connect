@@ -368,11 +368,9 @@ function setScanMode(m) {
   $("#scanSub").textContent = m === "reset" ? "Scan the school ID of the account you want to reset. The LRN on it must match." : "Scan your San Pedro National High School ID to continue.";
 }
 function openForgot() {
-  openSheet(`<h2 class="sh">Forgot password?</h2><p class="muted s">Enter your LRN or student ID. Then scan your school ID to confirm it's you.</p>
-  <div class="field" style="margin-top:12px"><input id="fpId" placeholder="LRN or student ID" autocomplete="off"></div>
-  <small class="err" id="fpErr"></small><button class="btn primary" id="fpNext">Continue</button>
-  <p class="muted s" style="margin-top:10px">Can't scan your ID? Email <a href="mailto:campusconnect.sphns.system@gmail.com?subject=CampusConnect%20Password%20Help" style="color:var(--blue);font-weight:700;word-break:break-all">campusconnect.sphns.system@gmail.com</a> or tell your class adviser.</p>`);
-  $("#fpId").value = $("#studentId").value.trim();
+  openSheet(`<h2 class="sh">Forgot password?</h2>
+  <p class="muted s">For your safety, passwords can't be reset automatically yet. Email the CampusConnect team (or tell your class adviser) and they will help you get back in.</p>
+  <a class="btn primary" href="mailto:campusconnect.sphns.system@gmail.com?subject=CampusConnect%20Password%20Help" style="display:block;text-align:center;margin-top:12px">Email Support</a>`);
 }
 function forgotNext() {
   const id = $("#fpId").value.trim().toLowerCase(), a = accounts.find(x => x.id === id);
@@ -1219,7 +1217,8 @@ function toOrder(r) {
     created: +new Date(r.created_at), date: new Date(r.created_at).toLocaleDateString("en-PH"),
     seller: r.seller_name, sellerId: r.seller, buyerId: r.buyer, buyerName: r.buyer_name,
     addr: r.addr || {}, expiresAt: r.expires_at ? +new Date(r.expires_at) : +new Date(r.created_at) + ORDER_RESPOND_HOURS * 3600000,
-    confirmBy: r.confirm_by ? +new Date(r.confirm_by) : 0, actor: r.last_actor
+    confirmBy: r.confirm_by ? +new Date(r.confirm_by) : 0, actor: r.last_actor,
+    eta: r.eta_at ? +new Date(r.eta_at) : 0, etaNote: r.eta_note || "", accepted: r.accepted_at ? +new Date(r.accepted_at) : 0
   };
 }
 async function loadOrders() {
@@ -1250,20 +1249,28 @@ const leftLabel = ms => {
 };
 const WINDOW_MS = { Pending: ORDER_RESPOND_HOURS * 3600000, Processing: ORDER_CONFIRM_DAYS * 86400000 };
 function deadlineBar(o) {
-  const st = statusOf(o), end = st === "Pending" ? o.expiresAt : st === "Processing" ? o.confirmBy : 0;
+  const st = statusOf(o), est = st === "Processing" && o.eta && o.accepted;
+  const end = est ? o.eta : st === "Pending" ? o.expiresAt : st === "Processing" ? o.confirmBy : 0;
   if (!end)
     return "";
-  const left = Math.max(0, end - Date.now()), pct = Math.min(100, Math.round(left / WINDOW_MS[st] * 100));
+  const win = est ? o.eta - o.accepted : WINDOW_MS[st];
+  const left = Math.max(0, end - Date.now()), pct = Math.min(100, Math.round(left / win * 100));
   return `<div class="dbar ${pct <= 25 ? "urgent" : ""}"><i style="width:${pct}%"></i></div>`;
 }
 const deadlineLine = o => statusOf(o) === "Pending" ? `Seller must respond in ${leftLabel(o.expiresAt - Date.now())}`
-  : statusOf(o) === "Processing" ? `Auto-completes in ${leftLabel(o.confirmBy - Date.now())} unless confirmed` : "";
-async function orderAction(action) {
+  : statusOf(o) === "Processing" ? (o.eta ? (o.eta > Date.now() ? `Estimated ready in ${leftLabel(o.eta - Date.now())}` : "Estimated time reached. Check with the seller.")
+    : `Auto-completes in ${leftLabel(o.confirmBy - Date.now())} unless confirmed`) : "";
+async function orderAction(action, opts = {}) {
   const o = findOrder(curOrderId);
   if (!o)
     return;
   closeSheet();
-  const { error } = await db.rpc("order_action", { p_order: o.id, p_action: action });
+  const args = { p_order: o.id, p_action: action };
+  if (action === "accept") {
+    args.p_eta_minutes = opts.eta || 60;
+    args.p_note = opts.note || "";
+  }
+  const { error } = await db.rpc("order_action", args);
   if (error) {
     console.warn("[order] action failed", error);
     toast(error.message || "That action isn't available right now.");
@@ -1273,13 +1280,29 @@ async function orderAction(action) {
   await loadOrders();
   const ref = refOf(o), buyer = o.buyerId === session, other = buyer ? o.sellerId : o.buyerId;
   const text = {
-    accept: `I accepted your order #${ref}. I'll prepare it now.`,
+    accept: `I accepted your order #${ref}. Estimated ${(DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label.toLowerCase()} time: about ${etaText(opts.eta || 60)}.${opts.note ? " " + opts.note : ""}`,
     decline: `Sorry, I can't fulfill order #${ref}.`,
     cancel: `I cancelled order #${ref}.`,
     complete: buyer ? `I received order #${ref}. Thank you!` : `Order #${ref} is complete. Thanks for buying!`
   }[action];
   pushMsg({ from: "me", type: "text", text }, other);
   toast({ accept: "Order accepted.", decline: "Order declined.", cancel: "Order cancelled.", complete: "Order marked as completed." }[action]);
+}
+const ETA_CHOICES = [15, 30, 60, 120, 1440];
+let etaPick = 30;
+const etaText = m => m >= 1440 ? "1 day" : m >= 60 ? (m / 60) + (m === 60 ? " hour" : " hours") : m + " minutes";
+function openAcceptSheet(o) {
+  etaPick = 30;
+  const way = (DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label;
+  openSheet(`
+    <h2 class="sh">When will it be ready?</h2>
+    <p class="muted s">${esc(way)}. Your buyer will see this time and can follow the order until it is completed.</p>
+    <div class="pills" style="margin:12px 0">${ETA_CHOICES.map(m => `<button type="button" class="pill ${m === etaPick ? "on" : ""}" data-eta="${m}">${m === 1440 ? "Tomorrow" : etaText(m)}</button>`).join("")}</div>
+    <div class="field"><input id="etaNote" maxlength="120" placeholder="Meetup place or note (optional)"></div>
+    <div class="dlgbtns">
+      <button class="btn outline" data-close>Go Back</button>
+      <button class="btn primary" data-oact="accept-yes">Accept Order</button>
+    </div>`, true);
 }
 const askSheet = (title, text, yes, act) => openSheet(`
   <h2 class="sh">${title}</h2>
@@ -1332,6 +1355,14 @@ function ordersHTML() {
     (list.map(orderCard).join("") || `<div class="empty">No ${orderFilter.toLowerCase()} orders.</div>`);
 }
 
+function etaCard(o) {
+  if (statusOf(o) !== "Processing" || !o.eta)
+    return "";
+  const way = (DELIVERY[(o.addr || {}).method] || DELIVERY.meetup).label, at = new Date(o.eta).toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+  return `<div class="card"><b>Estimated ${esc(way.toLowerCase())} time</b>
+    <p class="s">${o.eta > Date.now() ? "Ready in about " + leftLabel(o.eta - Date.now()) + " (around " + at + ")" : "The estimated time has passed. Please chat the " + (o.buyerId === session ? "seller" : "buyer") + "."}</p>
+    ${o.etaNote ? `<p class="muted s">Note: ${esc(o.etaNote)}</p>` : ""}</div>`;
+}
 function renderOrder() {
   const o = findOrder(curOrderId);
   if (!o)
@@ -1361,6 +1392,7 @@ function renderOrder() {
     </div>
     <div>${statusPill(o)}</div>
     ${stepperHTML(st)}
+    ${etaCard(o)}
     <p class="muted s">Ordered on ${o.date} · ${itemsLabel(o)} · ${buyer ? "Seller: " + esc(o.seller) : "Buyer: " + esc(o.buyerName)}</p>
     <div class="dpanel row">
       <div class="mini" style="background:${o.bg}">${icon("bag")}</div>
@@ -1455,7 +1487,7 @@ $("#odBody").addEventListener("click", e => {
   if (e.target.closest("#odCancel"))
     openSheet(confirmCancelHTML(o), true);
   else if (e.target.closest("#odAccept"))
-    orderAction("accept");
+    openAcceptSheet(o);
   else if (e.target.closest("#odDecline"))
     askSheet("Decline this order?", "The buyer will be told that you can't fulfill this order.", "Yes, Decline", "decline-yes");
   else if (e.target.closest("#odDone"))
@@ -1468,10 +1500,18 @@ $("#odBody").addEventListener("click", e => {
       .catch(() => toast("Could not copy the order number."));
 });
 $("#sheetBody").addEventListener("click", e => {
+  const pill = e.target.closest("[data-eta]");
+  if (pill) {
+    etaPick = +pill.dataset.eta;
+    $$("#sheetBody [data-eta]").forEach(x => x.classList.toggle("on", x === pill));
+    return;
+  }
   const b = e.target.closest("[data-oact]");
   if (!b)
     return;
-  if (b.dataset.oact === "cancel-yes")
+  if (b.dataset.oact === "accept-yes")
+    orderAction("accept", { eta: etaPick, note: ($("#etaNote") ? $("#etaNote").value.trim().slice(0, 120) : "") });
+  else if (b.dataset.oact === "cancel-yes")
     cancelOrder();
   else if (b.dataset.oact === "decline-yes")
     orderAction("decline");
@@ -1528,13 +1568,28 @@ function sendHelp() {
   closeSheet();
   toast("Opening your email app…");
 }
-function savePw() {
-  const u = accounts.find(a => a.id === session);
-  const err = $("#pwOld").value !== u.password ? "Current password is incorrect." : !($("#pwNew").value.length >= 8 && /[A-Za-z]/.test($("#pwNew").value) && /\d/.test($("#pwNew").value)) ? "Use 8+ characters with letters and numbers." : $("#pwNew").value !== $("#pwCf").value ? "Passwords do not match." : "";
+async function savePw() {
+  const u = accounts.find(a => a.id === session), oldP = $("#pwOld").value, newP = $("#pwNew").value;
+  const err = !oldP ? "Enter your current password." :
+    !(newP.length >= 8 && /[A-Za-z]/.test(newP) && /\d/.test(newP)) ? "Use 8+ characters with letters and numbers." :
+    newP !== $("#pwCf").value ? "Passwords do not match." :
+    newP === oldP ? "Choose a password different from your current one." : "";
   if (err)
     return void ($("#pwErr").textContent = err);
-  u.password = $("#pwNew").value;
-  save("cc_accounts", accounts);
+  const btn = $("#pwSave");
+  btn.disabled = true;
+  // Prove it's really you first, then let Supabase change the password.
+  const { error: bad } = await db.auth.signInWithPassword({ email: u.email, password: oldP });
+  if (bad) {
+    btn.disabled = false;
+    return void ($("#pwErr").textContent = "Current password is incorrect.");
+  }
+  const { error } = await db.auth.updateUser({ password: newP });
+  btn.disabled = false;
+  if (error) {
+    console.error("[password] update failed", error);
+    return void ($("#pwErr").textContent = "Couldn't update the password: " + (error.message || error.code));
+  }
   closeSheet();
   toast("Password updated.");
 }
@@ -1802,20 +1857,34 @@ $("#ePhoto").addEventListener("change", e => {
       setAvatar($("#eAv"), { avatar: d });
     });
 });
-$("#editForm").addEventListener("submit", e => {
+$("#editForm").addEventListener("submit", async e => {
   e.preventDefault();
   const n = $("#eName"), us = $("#eUser"), un = us.value.trim().replace(/^@/, "");
   let ok = setErr(n, n.value.trim().length >= 3 ? "" : "Enter your full name.");
-  ok = setErr(us, !/^[a-z0-9._]{3,20}$/i.test(un) ? "3–20 letters, numbers, dots or underscores." : accounts.some(a => a.id !== session && uname(a).toLowerCase() === un.toLowerCase()) ? "That username is taken." : "") && ok;
+  ok = setErr(us, !/^[a-z0-9._]{3,20}$/i.test(un) ? "3–20 letters, numbers, dots or underscores." : "") && ok;
   if (!ok)
     return;
   const u = accounts.find(a => a.id === session);
-  Object.assign(u, {
-    name: n.value.trim(), username: un, section: $("#eSec").value, bio: $("#eBio").value.trim()
-  });
+  const patch = { name: n.value.trim(), username: un, section: $("#eSec").value, bio: $("#eBio").value.trim() };
   if (ePhotoData)
-    u.avatar = ePhotoData;
-  save("cc_accounts", accounts);
+    patch.avatar = ePhotoData;
+  const btn = e.target.querySelector("button.primary");
+  if (btn)
+    btn.disabled = true;
+  const { data, error } = await db.from("profiles").update(patch).eq("id", session).select("id");
+  if (btn)
+    btn.disabled = false;
+  if (error) {
+    console.error("[profile] update failed", error);
+    if (error.code === "23505")
+      return void setErr(us, "That username is already taken.");
+    return toast("Couldn't save your profile: " + (error.message || error.code));
+  }
+  if (!data || !data.length) {
+    console.error("[profile] update changed no rows (check the profiles update policy)");
+    return toast("Couldn't save your profile. Please try again later.");
+  }
+  Object.assign(u, patch);
   toast("Profile updated.");
   go("profile");
 });
@@ -2047,7 +2116,7 @@ function syncOrderNotifs() {
       toast("You have a new order to process.");
     }
     else if (known && map[o.id] !== st && o.actor !== session)
-      notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
+      notify("order", "Order Update", `${asBuyer ? "Your order" : "Order"} #${refOf(o)} is now ${st}.${st === "Processing" && o.eta ? " Estimated ready in " + leftLabel(Math.max(0, o.eta - Date.now())) + "." : ""}${o.reason ? " " + o.reason + "." : ""}`, { order: o.id });
     map[o.id] = st;
   });
   save("cc_order_seen_" + session, map);
